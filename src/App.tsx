@@ -9,6 +9,7 @@ import { Auth } from '@/pages/Auth';
 import { Home } from '@/pages/Home';
 import { AddItem } from '@/pages/AddItem';
 import { ExpiringSoon } from '@/pages/ExpiringSoon';
+import { DealSearch } from './pages/DealSearch';
 import { Households } from '@/components/home/households/households';
 import { Settings } from '@/components/home/settings/Settings';
 import { useGuestStore } from '@/stores/guestStore';
@@ -105,6 +106,12 @@ function AppRoutes() {
           <ProtectedRoute>
             <Settings />
           </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/deal-search"
+        element={
+            <DealSearch />
         }
       />
     </Routes>

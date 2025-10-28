@@ -478,6 +478,14 @@ export function Home() {
             >
               <Filter className={`${isMobile ? 'h-3 w-3' : 'h-4 w-4'}`} />
             </Button>
+
+            <Button
+              variant="outline"
+              onClick={() => navigate('/deal-search')}
+              className={`font-secondary whitespace-nowrap ${isMobile ? 'h-8 text-xs px-2' : 'h-10'}`}
+            >
+              Find Deals
+            </Button>
           </div>
 
           {/* Category Filter */}
