@@ -1,106 +1,104 @@
 // src/pages/DealSearch.tsx
 
 import React, { useState } from 'react';
-// ⬇️ Adjust this import path if needed
 import { supabase } from '@/integrations/supabase/client'; 
 
-// --- Define your data types ---
-type Deal = {
+// --- 1. MODIFIED: Updated data types ---
+// Note: distance_m is optional, as the exact-zip RPC doesn't return it.
+type DealResult = {
   id: number;
-  created_at: string;
-  retailer: string;
-  zip_code: number;
   product_name: string;
   product_price: number;
+  retailer: string;
+  zip_code: string; // Zip code is now TEXT
+  distance_m?: number;
 };
-
-// This type selects the columns we need for the results
-type DealResult = Pick<Deal, 'id' | 'product_name' | 'product_price' | 'retailer' | 'zip_code'>;
 
 
 export function DealSearch() {
+  // --- 2. MODIFIED: State updates ---
   const [searchTerm, setSearchTerm] = useState('');
-  const [zipcode, setZipcode] = useState('');
+  const [zipcode, setZipcode] = useState(''); // Zip code is now a string
+  const [radius, setRadius] = useState('10'); // New state for radius
+  
   const [results, setResults] = useState<DealResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * --- 5. NEW: Filters RPC results ---
+   * This function implements the "one result per retailer" logic.
+   * Both RPC functions sort results (by price or distance),
+   * so we just need to take the *first* one we see for each retailer.
+   */
+  const processResults = (data: DealResult[]) => {
+    const closestByRetailer = new Map<string, DealResult>();
+    for (const deal of data) {
+      if (!closestByRetailer.has(deal.retailer)) {
+        closestByRetailer.set(deal.retailer, deal);
+      }
+    }
+    setResults(Array.from(closestByRetailer.values()));
+  };
+
+  // --- 4. MODIFIED: The search handler logic ---
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!searchTerm.trim()) return;
-
     setLoading(true);
     setError(null);
     setResults([]);
 
-    let numericZipcode: number | null = null;
-    if (zipcode.trim()) {
-      numericZipcode = parseInt(zipcode.trim(), 10);
-      if (isNaN(numericZipcode)) {
-        setError('Please enter a valid numeric zip code.');
-        setLoading(false);
-        return; // Stop the search
-      }
+    // --- Validation ---
+    const radiusNum = parseInt(radius, 10);
+    if (!searchTerm.trim()) {
+      setError('Please enter an item name.');
+      setLoading(false);
+      return;
+    }
+    if (!/^\d{5}$/.test(zipcode)) {
+      setError('Please enter a valid 5-digit zip code.');
+      setLoading(false);
+      return;
+    }
+    if (isNaN(radiusNum) || radiusNum <= 0) {
+      setError('Please enter a search radius greater than 0.');
+      setLoading(false);
+      return;
     }
 
     try {
-      // This prevents any chance of the queries interfering.
-      const getBaseQuery = () => supabase
-        .from('flyer_deals')
-        .select('id, product_name, product_price, retailer, zip_code')
-        .ilike('product_name', `%${searchTerm}%`);
+      // --- RPC Call 1: Try for an EXACT zip code match first ---
+      const { data: exact, error: e1 } = await supabase
+        .rpc('find_deals_in_zip', { 
+          user_zip: zipcode, 
+          q: searchTerm, 
+          max_rows: 100 
+        });
 
+      if (e1) throw e1;
+      
+      if (exact && exact.length > 0) {
+        processResults(exact as DealResult[]);
+        setLoading(false);
+        return; // Found results, stop here.
+      }
 
-      if (numericZipcode !== null) {
-        // --- 1. Try 5-digit EXACT match ---
-        let { data, error } = await getBaseQuery()
-          .eq('zip_code', numericZipcode)
-          .order('product_price', { ascending: true });
+      // --- RPC Call 2: No exact match, try radius search ---
+      const meters = Math.round(radiusNum * 1609.34);
+      const { data: near, error: e2 } = await supabase
+        .rpc('find_deals_near_zip', { 
+          user_zip: zipcode, 
+          q: searchTerm, 
+          radius_meters: meters, 
+          max_rows: 100 
+        });
 
-        if (error) throw error;
-        if (data && data.length > 0) {
-          setResults(data as DealResult[]); // Found results, stop here.
-          setLoading(false);
-          return; 
-        }
-
-        // --- 2. No exact match, try 4-digit prefix match ---
-        // e.g., 90045 -> range [90040, 90049]
-        const zipStart4 = Math.floor(numericZipcode / 10) * 10; 
-        const zipEnd4 = zipStart4 + 10; 
-
-        ({ data, error } = await getBaseQuery()
-          .gte('zip_code', zipStart4)
-          .lt('zip_code', zipEnd4)
-          .order('product_price', { ascending: true }));
-
-        if (error) throw error;
-        if (data && data.length > 0) {
-          setResults(data as DealResult[]); // Found 4-digit results, stop here.
-          setLoading(false);
-          return; 
-        }
-
-        // --- 3. No 4-digit match, try 3-digit prefix match ---
-        // e.g., 90045 -> range [90000, 90099]
-        const zipStart3 = Math.floor(numericZipcode / 100) * 100;
-        const zipEnd3 = zipStart3 + 100;
-
-        ({ data, error } = await getBaseQuery()
-          .gte('zip_code', zipStart3)
-          .lt('zip_code', zipEnd3)
-          .order('product_price', { ascending: true }));
-        
-        if (error) throw error;
-        setResults(data as DealResult[]); // Set whatever we find (even empty)
-
+      if (e2) throw e2;
+      
+      if (near && near.length > 0) {
+        processResults(near as DealResult[]);
       } else {
-        // --- No zip code provided: Just search for the item ---
-        const { data, error } = await getBaseQuery()
-          .order('product_price', { ascending: true });
-        
-        if (error) throw error;
-        setResults(data as DealResult[]);
+        setResults([]); // Nothing found
       }
 
     } catch (err: any) {
@@ -115,24 +113,38 @@ export function DealSearch() {
     <div className="container mx-auto p-4">
       <h1 className="text-2xl font-bold mb-4">Grocery Deal Finder</h1>
       
-      {/* Search Form */}
+      {/* --- 3. MODIFIED: The search form --- */}
       <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-2 mb-4">
         <input
           type="text"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           placeholder="e.g., 'milk', 'eggs'"
-          className="border p-2 rounded-md flex-grow" // Main search
+          className="border p-2 rounded-md flex-grow" 
+          required
         />
         <input
-          type="text" // Use "text" for simple input, "tel" can also work
-          pattern="[0-9]*" // Helps mobile users get a number pad
-          inputMode="numeric"
+          type="text" 
+          maxLength={5} // Max 5 digits
           value={zipcode}
           onChange={(e) => setZipcode(e.target.value)}
-          placeholder="Zip Code (Optional)"
-          className="border p-2 rounded-md sm:w-32" // Zip code input
+          placeholder="Zip Code"
+          className="border p-2 rounded-md sm:w-32" 
+          required
         />
+        <div className="flex items-center border p-2 rounded-md sm:w-32">
+          <input
+            type="number" 
+            min="1"
+            value={radius}
+            onChange={(e) => setRadius(e.target.value)}
+            placeholder="Radius"
+            // Use border-none and focus:ring-0 to remove default input styling
+            className="border-none p-0 w-full focus:outline-none focus:ring-0"
+            required
+          />
+          <span className="text-sm text-gray-500 ml-1">miles</span>
+        </div>
         <button
           type="submit"
           disabled={loading}
@@ -143,9 +155,9 @@ export function DealSearch() {
       </form>
 
       {/* Error Message */}
-      {error && <div className="text-red-500">Error: {error}</div>}
+      {error && <div className="text-red-500">{error}</div>}
 
-      {/* Results List */}
+      {/* --- 6. MODIFIED: The results list --- */}
       <div className="mt-6">
         <h2 className="text-xl font-semibold">Results</h2>
         {results.length === 0 && !loading && (
@@ -160,6 +172,17 @@ export function DealSearch() {
               </p>
               <p className="text-gray-600">{deal.retailer}</p>
               <p className="text-sm text-gray-500">Zip: {deal.zip_code}</p>
+              
+              {/* Display distance in miles or "In your zip" */}
+              {deal.distance_m != null ? (
+                <p className="text-sm text-gray-500">
+                  {(deal.distance_m / 1609.34).toFixed(1)} miles away
+                </p>
+              ) : (
+                <p className="text-sm text-gray-500">
+                  In your zip code
+                </p>
+              )}
             </li>
           ))}
         </ul>
@@ -167,5 +190,3 @@ export function DealSearch() {
     </div>
   );
 }
-
-// export default DealSearchPage; // Use this if you prefer default exports
