@@ -1,9 +1,12 @@
 // src/pages/DealSearch.tsx
 
-import React, { useState } from 'react';
-import { supabase } from '@/integrations/supabase/client'; 
+import React, { useState, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+// Import Checkbox components
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 
-// --- 1. MODIFIED: Updated data types ---
+// --- Updated data types ---
 // Note: distance_m is optional, as the exact-zip RPC doesn't return it.
 type DealResult = {
   id: number;
@@ -14,39 +17,82 @@ type DealResult = {
   distance_m?: number;
 };
 
+const ITEMS_PER_PAGE = 10;
 
 export function DealSearch() {
-  // --- 2. MODIFIED: State updates ---
+  // --- MODIFIED: State updates ---
   const [searchTerm, setSearchTerm] = useState('');
   const [zipcode, setZipcode] = useState(''); // Zip code is now a string
   const [radius, setRadius] = useState('10'); // New state for radius
-  
-  const [results, setResults] = useState<DealResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [results, setResults] = useState<DealResult[]>([]); // This holds the *current page* of results
+  const [processedResults, setProcessedResults] = useState<DealResult[]>([]); // This holds *all* results
+  // --- State for filtering ---
+  // Holds the items from the search (e.g., ['milk', 'chicken'])
+  const [searchedItems, setSearchedItems] = useState<string[]>([]);
+  // Holds the *currently checked* filters (e.g., ['milk'])
+  const [activeFilters, setActiveFilters] = useState<string[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+
   /**
-   * --- 5. NEW: Filters RPC results ---
+   * --- Filters RPC results ---
    * This function implements the "one result per retailer" logic.
    * Both RPC functions sort results (by price or distance),
    * so we just need to take the *first* one we see for each retailer.
    */
-  const processResults = (data: DealResult[]) => {
-    const closestByRetailer = new Map<string, DealResult>();
+  const processResults = (data: DealResult[]): DealResult[] => {
+    const closestStoreZip = new Map<string, string>(); // Map<Retailer, ZipCode>
+    const seenRetailers = new Set<string>(); // Set<Retailer>
+    const finalResults: DealResult[] = [];
+
+    // The data is already sorted by distance, so the first time we see a
+    // retailer, we know it's their closest store.
     for (const deal of data) {
-      if (!closestByRetailer.has(deal.retailer)) {
-        closestByRetailer.set(deal.retailer, deal);
+      const retailer = deal.retailer;
+      
+      // 1. If this is the first time seeing this retailer,
+      //    record its zip code as the "closest store"
+      if (!seenRetailers.has(retailer)) {
+        seenRetailers.add(retailer);
+        closestStoreZip.set(retailer, deal.zip_code);
       }
+      
+      // 2. Only add deals that are from the "closest store" we recorded
+      if (closestStoreZip.get(retailer) === deal.zip_code) {
+        finalResults.push(deal);
+      }
+      // Deals from the same retailer but at a different (farther) zip are ignored.
     }
-    setResults(Array.from(closestByRetailer.values()));
+    
+    // 3. Sort the final combined list by price, cheapest first.
+    finalResults.sort((a, b) => a.product_price - b.product_price);
+    
+    return finalResults;
   };
 
-  // --- 4. MODIFIED: The search handler logic ---
+  // --- The search handler logic ---
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
     setResults([]);
+    setProcessedResults([]); // Clear old results
+    setSearchedItems([]);
+    setActiveFilters([]);
+    setCurrentPage(1); // Reset to page 1
+
+    // --- Parse multi-item search term ---
+    const searchTerms = searchTerm.split(';')
+      .map(term => term.trim()) // Remove whitespace
+      .filter(term => term.length > 0); // Remove empty strings
+
+    if (searchTerms.length === 0) {
+      setError('Please enter at least one item name.');
+      setLoading(false);
+      return;
+    }
 
     // --- Validation ---
     const radiusNum = parseInt(radius, 10);
@@ -67,38 +113,44 @@ export function DealSearch() {
     }
 
     try {
-      // --- RPC Call 1: Try for an EXACT zip code match first ---
+      // --- Call new RPCs with the array ---
       const { data: exact, error: e1 } = await supabase
         .rpc('find_deals_in_zip', { 
           user_zip: zipcode, 
-          q: searchTerm, 
-          max_rows: 100 
+          search_terms: searchTerms, // Pass the array
+          max_rows: 500 
         });
 
       if (e1) throw e1;
       
+      let rawData: DealResult[] = [];
+
       if (exact && exact.length > 0) {
-        processResults(exact as DealResult[]);
-        setLoading(false);
-        return; // Found results, stop here.
-      }
-
-      // --- RPC Call 2: No exact match, try radius search ---
-      const meters = Math.round(radiusNum * 1609.34);
-      const { data: near, error: e2 } = await supabase
-        .rpc('find_deals_near_zip', { 
-          user_zip: zipcode, 
-          q: searchTerm, 
-          radius_meters: meters, 
-          max_rows: 100 
-        });
-
-      if (e2) throw e2;
-      
-      if (near && near.length > 0) {
-        processResults(near as DealResult[]);
+        rawData = exact as DealResult[];
       } else {
-        setResults([]); // Nothing found
+        const meters = Math.round(radiusNum * 1609.34);
+        const { data: near, error: e2 } = await supabase
+          .rpc('find_deals_near_zip', { 
+            user_zip: zipcode, 
+            search_terms: searchTerms, // Pass the array
+            radius_meters: meters, 
+            max_rows: 500 
+          });
+
+        if (e2) throw e2;
+        if (near && near.length > 0) {
+          rawData = near as DealResult[];
+        }
+      }
+      
+      if (rawData.length > 0) {
+        const allFilteredDeals = processResults(rawData);
+        setProcessedResults(allFilteredDeals); // Store all deals
+        // Set up filters
+        setSearchedItems(searchTerms); // For building the UI
+        setActiveFilters(searchTerms); // For filtering (default all)
+      } else {
+        setResults([]); 
       }
 
     } catch (err: any) {
@@ -109,17 +161,80 @@ export function DealSearch() {
     }
   };
 
+  /**
+   * --- Effect to filter and paginate results ---
+   * This effect runs whenever the "master list" or "active filters" change.
+   */
+  useEffect(() => {
+    if (processedResults.length === 0) {
+      setResults([]);
+      return;
+    }
+
+    // 1. Filter the master list
+    const filteredDeals = processedResults.filter(deal => {
+      // Check if the deal's product name contains ANY of the *active* filters
+      return activeFilters.some(filter => 
+        deal.product_name.toLowerCase().includes(filter.toLowerCase())
+      );
+    });
+
+    // 2. Paginate the filtered list
+    const totalPages = Math.ceil(filteredDeals.length / ITEMS_PER_PAGE);
+    const newCurrentPage = Math.min(currentPage, totalPages) || 1;
+    setCurrentPage(newCurrentPage);
+    
+    const startIndex = (newCurrentPage - 1) * ITEMS_PER_PAGE;
+    const endIndex = startIndex + ITEMS_PER_PAGE;
+    
+    setResults(filteredDeals.slice(startIndex, endIndex));
+
+  }, [processedResults, activeFilters, currentPage]); // Re-run when these change
+
+
+  // --- Handler for changing filters ---
+  const handleFilterChange = (checked: boolean, item: string) => {
+    setActiveFilters(prevFilters => {
+      if (checked) {
+        // Add item to filter
+        return [...prevFilters, item];
+      } else {
+        // Remove item from filter
+        return prevFilters.filter(f => f !== item);
+      }
+    });
+    // Reset to page 1 when filters change
+    setCurrentPage(1); 
+  };
+  
+  // --- Pagination handlers ---
+  const totalPages = Math.ceil(
+    processedResults.filter(deal => 
+      activeFilters.some(filter => 
+        deal.product_name.toLowerCase().includes(filter.toLowerCase())
+      )
+    ).length / ITEMS_PER_PAGE
+  );
+
+  const handleNextPage = () => {
+    setCurrentPage(prev => Math.min(prev + 1, totalPages));
+  };
+
+  const handlePrevPage = () => {
+    setCurrentPage(prev => Math.max(prev - 1, 1));
+  };
+
   return (
     <div className="container mx-auto p-4">
       <h1 className="text-2xl font-bold mb-4">Grocery Deal Finder</h1>
       
-      {/* --- 3. MODIFIED: The search form --- */}
+      {/* --- The search form --- */}
       <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-2 mb-4">
         <input
           type="text"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder="e.g., 'milk', 'eggs'"
+          placeholder="e.g., milk; chicken"
           className="border p-2 rounded-md flex-grow" 
           required
         />
@@ -157,7 +272,33 @@ export function DealSearch() {
       {/* Error Message */}
       {error && <div className="text-red-500">{error}</div>}
 
-      {/* --- 6. MODIFIED: The results list --- */}
+      {/* --- Filter UI --- */}
+      {searchedItems.length > 0 && (
+        <div className="mb-4 p-4 border rounded-lg">
+          <h3 className="font-semibold mb-2">Filter Results</h3>
+          <div className="flex flex-wrap gap-x-4 gap-y-2">
+            {searchedItems.map(item => (
+              <div key={item} className="flex items-center space-x-2">
+                <Checkbox
+                  id={`filter-${item}`}
+                  checked={activeFilters.includes(item)}
+                  onCheckedChange={(checked) => {
+                    handleFilterChange(checked as boolean, item);
+                  }}
+                />
+                <Label
+                  htmlFor={`filter-${item}`}
+                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                >
+                  {item}
+                </Label>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* --- The results list --- */}
       <div className="mt-6">
         <h2 className="text-xl font-semibold">Results</h2>
         {results.length === 0 && !loading && (
@@ -186,6 +327,31 @@ export function DealSearch() {
             </li>
           ))}
         </ul>
+
+        {/* --- Pagination Controls --- */}
+        {processedResults.length > ITEMS_PER_PAGE && (
+          <div className="flex justify-between items-center mt-4">
+            <button
+              variant="outline"
+              onClick={handlePrevPage}
+              disabled={currentPage === 1}
+              className="bg-blue-600 text-white px-4 py-2 rounded-md disabled:bg-gray-400"
+            >
+              Previous
+            </button>
+            <span className="text-sm text-gray-600">
+              Page {currentPage} of {totalPages}
+            </span>
+            <button
+              variant="outline"
+              onClick={handleNextPage}
+              disabled={currentPage === totalPages}
+              className="bg-blue-600 text-white px-4 py-2 rounded-md disabled:bg-gray-400"
+            >
+              Next
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
