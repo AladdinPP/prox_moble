@@ -1,6 +1,7 @@
 // src/pages/DealSearch.tsx
 
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 // Import Checkbox components
 import { Checkbox } from "@/components/ui/checkbox";
@@ -19,8 +20,22 @@ type DealResult = {
 
 const ITEMS_PER_PAGE = 10;
 
+/**
+ * Helper function to match the SQL "AND" logic
+ * This checks if a product name contains ALL keywords from a filter term.
+ */
+const productMatchesFilter = (productName: string, filterTerm: string): boolean => {
+  const lowerProductName = productName.toLowerCase();
+  // Split "vitamin d milk" into ['vitamin', 'd', 'milk']
+  const keywords = filterTerm.trim().toLowerCase().split(/\s+/);
+  
+  // Check if the product name includes EVERY keyword
+  return keywords.every(keyword => lowerProductName.includes(keyword));
+};
+
 export function DealSearch() {
   // --- MODIFIED: State updates ---
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [zipcode, setZipcode] = useState(''); // Zip code is now a string
   const [radius, setRadius] = useState('10'); // New state for radius
@@ -114,33 +129,20 @@ export function DealSearch() {
 
     try {
       // --- Call new RPCs with the array ---
-      const { data: exact, error: e1 } = await supabase
-        .rpc('find_deals_in_zip', { 
+      let rawData: DealResult[] = [];
+      const meters = Math.round(radiusNum * 1609.34);
+
+      const { data: near, error: e2 } = await supabase
+        .rpc('find_deals_near_zip', { 
           user_zip: zipcode, 
           search_terms: searchTerms, // Pass the array
+          radius_meters: meters, 
           max_rows: 500 
         });
 
-      if (e1) throw e1;
-      
-      let rawData: DealResult[] = [];
-
-      if (exact && exact.length > 0) {
-        rawData = exact as DealResult[];
-      } else {
-        const meters = Math.round(radiusNum * 1609.34);
-        const { data: near, error: e2 } = await supabase
-          .rpc('find_deals_near_zip', { 
-            user_zip: zipcode, 
-            search_terms: searchTerms, // Pass the array
-            radius_meters: meters, 
-            max_rows: 500 
-          });
-
-        if (e2) throw e2;
-        if (near && near.length > 0) {
-          rawData = near as DealResult[];
-        }
+      if (e2) throw e2;
+      if (near && near.length > 0) {
+        rawData = near as DealResult[];
       }
       
       if (rawData.length > 0) {
@@ -175,7 +177,7 @@ export function DealSearch() {
     const filteredDeals = processedResults.filter(deal => {
       // Check if the deal's product name contains ANY of the *active* filters
       return activeFilters.some(filter => 
-        deal.product_name.toLowerCase().includes(filter.toLowerCase())
+        productMatchesFilter(deal.product_name, filter)
       );
     });
 
@@ -211,7 +213,7 @@ export function DealSearch() {
   const totalPages = Math.ceil(
     processedResults.filter(deal => 
       activeFilters.some(filter => 
-        deal.product_name.toLowerCase().includes(filter.toLowerCase())
+        productMatchesFilter(deal.product_name, filter)
       )
     ).length / ITEMS_PER_PAGE
   );
@@ -226,47 +228,71 @@ export function DealSearch() {
 
   return (
     <div className="container mx-auto p-4">
+      {/* ⬇️ NEW: Button to link to the new page ⬇️ */}
+      <div className="mb-4 p-4 border rounded-lg bg-gray-50/50">
+        <h2 className="text-xl font-semibold">Want to optimize your whole cart?</h2>
+        <p className="text-gray-600 mb-2">Find the single cheapest store for all your items.</p>
+        <button onClick={() => navigate('/cart-finder')}>
+          Use Cart Optimizer
+        </button>
+      </div>
       <h1 className="text-2xl font-bold mb-4">Grocery Deal Finder</h1>
       
       {/* --- The search form --- */}
-      <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-2 mb-4">
-        <input
-          type="text"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder="e.g., milk; chicken"
-          className="border p-2 rounded-md flex-grow" 
-          required
-        />
-        <input
-          type="text" 
-          maxLength={5} // Max 5 digits
-          value={zipcode}
-          onChange={(e) => setZipcode(e.target.value)}
-          placeholder="Zip Code"
-          className="border p-2 rounded-md sm:w-32" 
-          required
-        />
-        <div className="flex items-center border p-2 rounded-md sm:w-32">
+      <form onSubmit={handleSearch} className="flex flex-col gap-1 mb-4">
+        
+        {/* --- 1. The Row of Inputs & Buttons --- */}
+        <div className="flex flex-col sm:flex-row gap-2">
+          {/* Item Search Input */}
           <input
-            type="number" 
-            min="1"
-            value={radius}
-            onChange={(e) => setRadius(e.target.value)}
-            placeholder="Radius"
-            // Use border-none and focus:ring-0 to remove default input styling
-            className="border-none p-0 w-full focus:outline-none focus:ring-0"
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="e.g., milk; chicken"
+            className="border p-2 rounded-md flex-grow" // flex-grow
             required
           />
-          <span className="text-sm text-gray-500 ml-1">miles</span>
+
+          {/* Zip Code Input */}
+          <input
+            type="text" 
+            maxLength={5} 
+            value={zipcode}
+            onChange={(e) => setZipcode(e.target.value)}
+            placeholder="Zip Code"
+            className="border p-2 rounded-md sm:w-32" 
+            required
+          />
+          
+          {/* Radius Input */}
+          <div className="flex items-center border p-2 rounded-md sm:w-32">
+            <input
+              type="number" 
+              min="1"
+              value={radius}
+              onChange={(e) => setRadius(e.target.value)}
+              placeholder="Radius"
+              className="border-none p-0 w-full focus:outline-none focus:ring-0"
+              required
+            />
+            <span className="text-sm text-gray-500 ml-1">miles</span>
+          </div>
+
+          {/* Search Button */}
+          <button
+            type="submit"
+            disabled={loading}
+            className="bg-blue-600 text-white px-4 py-2 rounded-md disabled:bg-gray-400"
+          >
+            {loading ? 'Searching...' : 'Search'}
+          </button>
         </div>
-        <button
-          type="submit"
-          disabled={loading}
-          className="bg-blue-600 text-white px-4 py-2 rounded-md disabled:bg-gray-400"
-        >
-          {loading ? 'Searching...' : 'Search'}
-        </button>
+
+        {/* --- 2. The Instruction Text (now outside the row) --- */}
+        <p className="text-xs text-gray-500 mt-1">
+          To search multiple items, separate them with a semicolon ( ; ).
+        </p>
+      
       </form>
 
       {/* Error Message */}
