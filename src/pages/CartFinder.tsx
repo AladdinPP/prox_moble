@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 
-// --- (Data Types are unchanged) ---
+// --- Data Types ---
 type EditableCartItem = {
   name: string;
   brand: string;
@@ -23,13 +23,13 @@ type EditableCartItem = {
 type DealMenuItem = {
   retailer: string;
   zip_code: string;
-  searched_item_name: string; 
+  searched_item_name: string; // The "name" from EditableCartItem, e.g., "milk"
   product_name: string;
   product_price: number;
   distance_m: number;
 };
 type OptimizedCartItem = {
-  searched_item: string;
+  searched_item: string; // The "name" from EditableCartItem
   product_name: string;
   product_price: number;
   retailer: string;
@@ -55,7 +55,7 @@ type SingleStoreResult = {
 const MAX_CANDIDATE_STORES = 30; 
 
 export function CartFinder() {
-  // --- (State is unchanged) ---
+  // --- State ---
   const [searchQuery, setSearchQuery] = useState(''); 
   const [zipcode, setZipcode] = useState(''); 
   const [radius, setRadius] = useState('10'); 
@@ -69,22 +69,21 @@ export function CartFinder() {
 
   /**
    * -----------------------------------------------------------------
-   * The "Optimizer" Brain (Using "topK=5" pruning)
+   * The "Optimizer" Brain (This is the fast one, no changes needed)
    * -----------------------------------------------------------------
    */
   const findBestCart = (
     dealMenu: DealMenuItem[], 
-    searchTerms: string[],
+    searchTerms: string[], // This is just the list of "name" fields
     storeLimit: number
   ): { bestCart: OptimizedCart | null, allStoreCarts: SingleStoreResult[] } => {
     
     console.time("Optimizer: 1. Pre-processing");
-    const topK = 5; // As requested: find top 5 stores for each item
+    const topK = 5;
     const candidateStoreIds = new Set<StoreID>();
     const storeMap = new Map<StoreID, { retailer: string, zip_code: string, distance_m: number }>();
     const priceMenu = new Map<string, Map<StoreID, DealMenuItem>>();
 
-    // 1. Build the fast lookup maps
     for (const deal of dealMenu) {
       const storeId: StoreID = `${deal.retailer}@${deal.zip_code}`;
       if (!storeMap.has(storeId)) {
@@ -96,7 +95,6 @@ export function CartFinder() {
       priceMenu.get(deal.searched_item_name)!.set(storeId, deal);
     }
 
-    // 2. Build the Candidate Store Group (using "topK=5" logic)
     for (const item of searchTerms) {
       const itemDeals = Array.from(priceMenu.get(item)?.values() || []);
       if (itemDeals.length === 0) continue; 
@@ -126,7 +124,6 @@ export function CartFinder() {
     const allStoreCarts: SingleStoreResult[] = [];
     let allCombos: StoreID[][] = [];
 
-    // 3. Generate combinations (Iterative generator)
     for (let k = 1; k <= storeLimit; k++) {
       const stack: { index: number, currentCombo: StoreID[] }[] = [];
       for(let i = 0; i <= uniqueStoreIds.length - k; i++) {
@@ -152,7 +149,6 @@ export function CartFinder() {
     console.log(`Generated ${allCombos.length} valid combinations.`);
 
     console.time("Optimizer: 3. Simulating Carts");
-    // 4. Simulate Carts
     for (const combo of allCombos) {
       const currentCart: OptimizedCart = {
         stores: combo,
@@ -169,13 +165,9 @@ export function CartFinder() {
           for (const storeId of combo) {
             const deal = itemPrices.get(storeId);
             if (deal) {
-              if (
-                !cheapestDeal ||
-                deal.product_price < cheapestDeal.product_price || 
-                (deal.product_price === cheapestDeal.product_price && deal.distance_m < cheapestDeal.distance_m)
-              ) {
+              if (!cheapestDeal || deal.product_price < cheapestDeal.product_price || (deal.product_price === cheapestDeal.product_price && deal.distance_m < cheapestDeal.distance_m)) {
                 cheapestDeal = {
-                  searched_item: item,
+                  searched_item: item, // This is just the "name" field
                   product_name: deal.product_name,
                   product_price: deal.product_price,
                   retailer: deal.retailer,
@@ -186,7 +178,6 @@ export function CartFinder() {
             }
           }
         }
-        
         if (cheapestDeal) {
           currentCart.items_found.push(cheapestDeal);
           currentCart.total_cart_price += cheapestDeal.product_price;
@@ -225,13 +216,17 @@ export function CartFinder() {
    * Core Optimizer function (Production Version)
    * -----------------------------------------------------------------
    */
-  const handleRunOptimizer = async (searchTerms: string[]) => {
+  // ⬇️ MODIFIED: This function now takes the full JSON object array ⬇️
+  const handleRunOptimizer = async (itemsToFind: EditableCartItem[]) => {
     console.log("--- handleRunOptimizer: START ---");
     console.time("Total Search Time"); 
     setLoading(true);
     setError(null);
     setResult(null);
     setSingleStoreResults([]);
+
+    // Get just the names for the optimizer
+    const searchTerms = itemsToFind.map(item => item.name);
 
     if (searchTerms.length === 0) {
         console.error("handleRunOptimizer: Validation failed: No search terms.");
@@ -251,12 +246,12 @@ export function CartFinder() {
     const retailerLimit = parseInt(retailerCountLimit, 10);
 
     try {
-      console.log("handleRunOptimizer: Calling RPC 'get_deal_menu_v5'...");
+      console.log("handleRunOptimizer: Calling RPC 'get_deal_menu_v6'...");
       console.time("SQL Query Time");
       const { data: rawData, error: rpcError } = await supabase
-        .rpc('get_deal_menu_v5', { 
+        .rpc('get_deal_menu_v6', { // ❗️ Calls the new v6 function
           user_zip: zipcode, 
-          search_terms: searchTerms, 
+          items_to_find: itemsToFind, // ❗️ Passes the full JSON
           radius_meters: meters
         });
       
@@ -274,7 +269,7 @@ export function CartFinder() {
         console.log("handleRunOptimizer: Calling findBestCart...");
         const { bestCart, allStoreCarts } = findBestCart(
           dealMenu, 
-          searchTerms, 
+          searchTerms, // Pass just the names
           retailerLimit
         );
         
@@ -337,8 +332,9 @@ export function CartFinder() {
     setEditableCartItems(initialItems);
     setInitialSearchDone(true);
     
-    console.log("handleInitialSearch: Running optimizer with initial terms:", searchTerms);
-    handleRunOptimizer(searchTerms);
+    console.log("handleInitialSearch: Running optimizer with initial items:", initialItems);
+    // ⬇️ MODIFIED: Passes the new JSON object array ⬇️
+    handleRunOptimizer(initialItems);
   };
 
   /**
@@ -346,14 +342,9 @@ export function CartFinder() {
    */
   const handleReRunSearch = () => {
     console.log("--- handleReRunSearch: START ---");
-    const newSearchTerms = editableCartItems.map(item => {
-      return `${item.name} ${item.brand} ${item.size} ${item.details}`
-        .trim() 
-        .replace(/\s+/g, ' '); 
-    }).filter(term => term.length > 0); 
-    
-    console.log("handleReRunSearch: Running optimizer with refined terms:", newSearchTerms);
-    handleRunOptimizer(newSearchTerms);
+    // ⬇️ MODIFIED: We no longer combine strings. We just pass the table state. ⬇️
+    console.log("handleReRunSearch: Running optimizer with refined items:", editableCartItems);
+    handleRunOptimizer(editableCartItems);
   };
 
   const handleEditCartItem = (index: number, field: keyof EditableCartItem, value: string) => {
@@ -454,7 +445,6 @@ export function CartFinder() {
                 />
                 <Input
                   value={item.size}
-                  // ⬇️ TYPO 1: FIXED ⬇️
                   onChange={(e) => handleEditCartItem(index, 'size', e.target.value)}
                   placeholder="e.g., 1 gal"
                 />
@@ -474,7 +464,7 @@ export function CartFinder() {
             {loading ? 'Finding Best Cart...' : 'Re-run Search'}
           </Button>
 
-          {/* --- ⬇️ PRODUCTION RENDER LOGIC (TYPOS FIXED) ⬇️ --- */}
+          {/* --- Results Display (All Typos Fixed) --- */}
           <div className="mt-6">
             {singleStoreResults.length > 0 && !loading && (
               <div>
@@ -486,7 +476,7 @@ export function CartFinder() {
                       <p className="text-xl text-green-700">${store.total_cart_price.toFixed(2)}</p>
                       <p className="text-sm text-gray-600">
                         Found {store.items_found_count} of {editableCartItems.length} items.
-                      </p> {/* ⬅️ TYPO 2: FIXED (was /D) */}
+                      </p>
                     </li>
                   ))}
                 </ul>
@@ -502,8 +492,7 @@ export function CartFinder() {
                   </h3>
                   <p className="text-lg font-semibold">
                     Using {result.stores.length} store(s): 
-                    {/* ⬇️ TYPO 3: FIXED (extra parenthesis) ⬇️ */}
-                    {result.stores.map(storeId => storeId.replace('@', ' (Zip: ')).join('), ')}
+                    {result.stores.map(storeId => storeId.replace('@', ' (Zip: ') + ')').join(', ')}
                   </p>
                   <hr className="my-3" />
                   <h4 className="font-semibold mb-2">Cart Details:</h4>
