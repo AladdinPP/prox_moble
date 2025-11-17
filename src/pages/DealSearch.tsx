@@ -16,9 +16,13 @@ type DealResult = {
   retailer: string;
   zip_code: string; // Zip code is now TEXT
   distance_m?: number;
+  image_link: string | null;
 };
 
 const ITEMS_PER_PAGE = 10;
+
+// Placeholder image URL
+const PLACEHOLDER_IMG = "https://via.placeholder.com/100x100.png?text=No+Image";
 
 /**
  * Helper function to match the SQL "AND" logic
@@ -57,36 +61,6 @@ export function DealSearch() {
    * Both RPC functions sort results (by price or distance),
    * so we just need to take the *first* one we see for each retailer.
    */
-  const processResults = (data: DealResult[]): DealResult[] => {
-    const closestStoreZip = new Map<string, string>(); // Map<Retailer, ZipCode>
-    const seenRetailers = new Set<string>(); // Set<Retailer>
-    const finalResults: DealResult[] = [];
-
-    // The data is already sorted by distance, so the first time we see a
-    // retailer, we know it's their closest store.
-    for (const deal of data) {
-      const retailer = deal.retailer;
-      
-      // 1. If this is the first time seeing this retailer,
-      //    record its zip code as the "closest store"
-      if (!seenRetailers.has(retailer)) {
-        seenRetailers.add(retailer);
-        closestStoreZip.set(retailer, deal.zip_code);
-      }
-      
-      // 2. Only add deals that are from the "closest store" we recorded
-      if (closestStoreZip.get(retailer) === deal.zip_code) {
-        finalResults.push(deal);
-      }
-      // Deals from the same retailer but at a different (farther) zip are ignored.
-    }
-    
-    // 3. Sort the final combined list by price, cheapest first.
-    finalResults.sort((a, b) => a.product_price - b.product_price);
-    
-    return finalResults;
-  };
-
   // --- The search handler logic ---
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -132,8 +106,8 @@ export function DealSearch() {
       let rawData: DealResult[] = [];
       const meters = Math.round(radiusNum * 1609.34);
 
-      const { data: near, error: e2 } = await supabase
-        .rpc('find_deals_near_zip', { 
+      const { data, error: e2 } = await supabase
+        .rpc('find_all_deals_v2', { 
           user_zip: zipcode, 
           search_terms: searchTerms, // Pass the array
           radius_meters: meters, 
@@ -141,17 +115,18 @@ export function DealSearch() {
         });
 
       if (e2) throw e2;
-      if (near && near.length > 0) {
-        rawData = near as DealResult[];
-      }
       
+      if (data && data.length > 0) {
+        rawData = data as DealResult[];
+      }
       if (rawData.length > 0) {
-        const allFilteredDeals = processResults(rawData);
-        setProcessedResults(allFilteredDeals); // Store all deals
+        // const allFilteredDeals = processResults(rawData);
+        setProcessedResults(rawData); // Store all deals
         // Set up filters
         setSearchedItems(searchTerms); // For building the UI
         setActiveFilters(searchTerms); // For filtering (default all)
       } else {
+        setError('No deals found for the given search criteria.');
         setResults([]); 
       }
 
@@ -332,24 +307,31 @@ export function DealSearch() {
         )}
         <ul className="space-y-2">
           {results.map((deal) => (
-            <li key={deal.id} className="border p-3 rounded-lg">
-              <p className="text-lg font-medium">{deal.product_name}</p>
-              <p className="text-xl font-bold text-green-600">
-                ${deal.product_price.toFixed(2)}
-              </p>
-              <p className="text-gray-600">{deal.retailer}</p>
-              <p className="text-sm text-gray-500">Zip: {deal.zip_code}</p>
-              
-              {/* Display distance in miles or "In your zip" */}
-              {deal.distance_m != null ? (
-                <p className="text-sm text-gray-500">
-                  {(deal.distance_m / 1609.34).toFixed(1)} miles away
+            <li key={deal.id} className="border p-3 rounded-lg flex items-center gap-4">
+              <img src={deal.image_link || PLACEHOLDER_IMG} alt={deal.product_name} 
+              className="w-20 h-20 object-cover rounded-md border bg-gray-50"
+              onError={(e) => {
+                e.currentTarget.src = PLACEHOLDER_IMG;
+              }} />
+              <div>
+                <p className="text-lg font-medium">{deal.product_name}</p>
+                <p className="text-xl font-bold text-green-600">
+                  ${deal.product_price.toFixed(2)}
                 </p>
-              ) : (
-                <p className="text-sm text-gray-500">
-                  In your zip code
-                </p>
-              )}
+                <p className="text-gray-600">{deal.retailer}</p>
+                <p className="text-sm text-gray-500">Zip: {deal.zip_code}</p>
+                
+                {/* Display distance in miles or "In your zip" */}
+                {deal.distance_m != null ? (
+                  <p className="text-sm text-gray-500">
+                    {(deal.distance_m / 1609.34).toFixed(1)} miles away
+                  </p>
+                ) : (
+                  <p className="text-sm text-gray-500">
+                    In your zip code
+                  </p>
+                )}
+              </div>
             </li>
           ))}
         </ul>
