@@ -17,6 +17,7 @@ type DealResult = {
   zip_code: string; // Zip code is now TEXT
   distance_m?: number;
   image_link: string | null;
+  product_size: string | null;
 };
 
 const ITEMS_PER_PAGE = 10;
@@ -315,6 +316,9 @@ export function DealSearch() {
               }} />
               <div>
                 <p className="text-lg font-medium">{deal.product_name}</p>
+                {deal.product_size && (
+                  <p className="text-sm text-gray-500">Size: {deal.product_size}</p>
+                )}
                 <p className="text-xl font-bold text-green-600">
                   ${deal.product_price.toFixed(2)}
                 </p>
