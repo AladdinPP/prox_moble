@@ -12,6 +12,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 
 // --- Data Types ---
 type EditableCartItem = {
@@ -27,6 +33,8 @@ type DealMenuItem = {
   product_name: string;
   product_price: number;
   distance_m: number;
+  product_size: string | null;
+  image_link: string | null;
 };
 type OptimizedCartItem = {
   searched_item: string; // The "name" from EditableCartItem
@@ -34,7 +42,9 @@ type OptimizedCartItem = {
   product_price: number;
   retailer: string;
   zip_code: string;
-  distance_m: number; 
+  distance_m: number;
+  product_size: string | null;
+  image_link: string | null;
 };
 type StoreID = string; 
 type OptimizedCart = {
@@ -49,10 +59,12 @@ type SingleStoreResult = {
   total_cart_price: number;
   items_found_count: number;
   distance_m: number;
+  items_found: OptimizedCartItem[];
 };
 
 // Safeguard
 const MAX_CANDIDATE_STORES = 30; 
+const PLACEHOLDER_IMG = "https://via.placeholder.com/100x100.png?text=No+Image";
 
 export function CartFinder() {
   // --- State ---
@@ -173,6 +185,8 @@ export function CartFinder() {
                   retailer: deal.retailer,
                   zip_code: deal.zip_code,
                   distance_m: deal.distance_m,
+                  product_size: deal.product_size,
+                  image_link: deal.image_link,
                 };
               }
             }
@@ -195,6 +209,7 @@ export function CartFinder() {
           total_cart_price: currentCart.total_cart_price,
           items_found_count: currentCart.items_found.length,
           distance_m: storeInfo.distance_m,
+          items_found: currentCart.items_found,
         });
       }
 
@@ -246,10 +261,10 @@ export function CartFinder() {
     const retailerLimit = parseInt(retailerCountLimit, 10);
 
     try {
-      console.log("handleRunOptimizer: Calling RPC 'get_deal_menu_v6'...");
+      console.log("handleRunOptimizer: Calling RPC 'get_deal_menu_v7'...");
       console.time("SQL Query Time");
       const { data: rawData, error: rpcError } = await supabase
-        .rpc('get_deal_menu_v6', { // ❗️ Calls the new v6 function
+        .rpc('get_deal_menu_v7', { // ❗️ Calls the new v6 function
           user_zip: zipcode, 
           items_to_find: itemsToFind, // ❗️ Passes the full JSON
           radius_meters: meters
@@ -275,6 +290,9 @@ export function CartFinder() {
         
         if (retailerLimit === 1) {
           console.log("handleRunOptimizer: Processing 1-store results.");
+          const completedStoreCarts = allStoreCarts.filter(
+            cart => cart.items_found_count === searchTerms.length
+          );
           const bestByBrand = new Map<string, SingleStoreResult>();
           for (const storeCart of allStoreCarts) {
             const currentBest = bestByBrand.get(storeCart.retailer);
@@ -469,17 +487,42 @@ export function CartFinder() {
             {singleStoreResults.length > 0 && !loading && (
               <div>
                 <h2 className="text-xl font-semibold">Best Price by Retailer</h2>
-                <ul className="mt-2 space-y-2">
-                  {singleStoreResults.map(store => (
-                    <li key={`${store.retailer}-${store.zip_code}`} className="border p-4 rounded-lg">
-                      <p className="text-lg font-bold">{store.retailer} (Zip: {store.zip_code})</p>
-                      <p className="text-xl text-green-700">${store.total_cart_price.toFixed(2)}</p>
-                      <p className="text-sm text-gray-600">
-                        Found {store.items_found_count} of {editableCartItems.length} items.
-                      </p>
-                    </li>
-                  ))}
-                </ul>
+                <Accordion type="multiple" className="w-full mt-2 space-y-2">
+                  {singleStoreResults.map(store => {
+                    const storeId = `${store.retailer}@${store.zip_code}`;
+                    return (
+                      <AccordionItem value={storeId} key={storeId} className="border p-2 rounded-lg">
+                        <AccordionTrigger className="p-2 hover:no-underline">
+                          <div className="flex justify-between w-full items-center">
+                            <span className="text-lg font-bold text-left">{store.retailer} (Zip: {store.zip_code})</span>
+                            <span className="text-xl font-bold text-green-700 pr-4">${store.total_cart_price.toFixed(2)}</span>
+                          </div>
+                        </AccordionTrigger>
+                        <AccordionContent className="p-2">
+                          <ul className="space-y-3 pt-2">
+                            {store.items_found.map(item => (
+                              <li key={item.product_name} className="flex items-center gap-4 border-b pb-3 last:border-b-0">
+                                <img
+                                  src={item.image_link || PLACEHOLDER_IMG}
+                                  alt={item.product_name}
+                                  className="w-20 h-20 object-cover rounded-md border bg-gray-50 flex-shrink-0"
+                                  onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMG; }}
+                                />
+                                <div className="min-w-0">
+                                  <p className="font-medium truncate">{item.product_name}</p>
+                                  {item.product_size && (
+                                    <p className="text-sm text-gray-500">{item.product_size}</p>
+                                  )}
+                                  <p className="text-lg font-bold text-green-600">${item.product_price.toFixed(2)}</p>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        </AccordionContent>
+                      </AccordionItem>
+                    )
+                  })}
+                </Accordion>
               </div>
             )}
 
@@ -495,17 +538,50 @@ export function CartFinder() {
                     {result.stores.map(storeId => storeId.replace('@', ' (Zip: ') + ')').join(', ')}
                   </p>
                   <hr className="my-3" />
-                  <h4 className="font-semibold mb-2">Cart Details:</h4>
-                  <ul className="list-disc list-inside space-y-1">
-                    {result.items_found.map(item => (
-                      <li key={`${item.retailer}-${item.product_name}`}>
-                        {item.product_name} (${item.product_price.toFixed(2)})
-                        <span className="text-xs text-gray-500">
-                          (for "{item.searched_item}" from {item.retailer} @ {item.zip_code})
-                        </span>
-                      </li>
+                  {/* --- NEW ACCORDION DISPLAY --- */}
+                  <h4 className="font-semibold mb-2">Cart Details by Store:</h4>
+                  <Accordion type="multiple" className="w-full">
+                    {/* Group items by store */}
+                    {Array.from(
+                      result.items_found.reduce((acc, item) => {
+                        const key: StoreID = `${item.retailer}@${item.zip_code}`;
+                        if (!acc.has(key)) acc.set(key, []);
+                        acc.get(key)!.push(item);
+                        return acc;
+                      }, new Map<StoreID, OptimizedCartItem[]>())
+                    ).map(([storeId, items]) => (
+                      <AccordionItem value={storeId} key={storeId}>
+                        <AccordionTrigger>
+                          <span className="font-semibold">
+                            {storeId.replace('@', ' (Zip: ') + ')'}
+                          </span>
+                        </AccordionTrigger>
+                        <AccordionContent>
+                          <ul className="space-y-3">
+                            {items.map(item => (
+                              <li key={item.product_name} className="flex items-center gap-4 border-b pb-3 last:border-b-0">
+                                <img
+                                  src={item.image_link || PLACEHOLDER_IMG}
+                                  alt={item.product_name}
+                                  className="w-20 h-20 object-cover rounded-md border bg-gray-50 flex-shrink-0"
+                                  onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMG; }}
+                                />
+                                <div className="min-w-0">
+                                  <p className="font-medium truncate">{item.product_name}</p>
+                                  {item.product_size && (
+                                    <p className="text-sm text-gray-500">{item.product_size}</p>
+                                  )}
+                                  <p className="text-lg font-bold text-green-600">${item.product_price.toFixed(2)}</p>
+                                  <p className="text-xs text-gray-500">(Searched for: "{item.searched_item}")</p>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        </AccordionContent>
+                      </AccordionItem>
                     ))}
-                  </ul>
+                  </Accordion>
+
                   {result.items_missing.length > 0 && (
                     <>
                       <h4 className="font-semibold mb-2 mt-3 text-red-600">Missing Items:</h4>
