@@ -294,7 +294,7 @@ export function CartFinder() {
             cart => cart.items_found_count === searchTerms.length
           );
           const bestByBrand = new Map<string, SingleStoreResult>();
-          for (const storeCart of allStoreCarts) {
+          for (const storeCart of completedStoreCarts) {
             const currentBest = bestByBrand.get(storeCart.retailer);
             if (
               !currentBest ||
