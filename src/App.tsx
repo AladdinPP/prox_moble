@@ -14,6 +14,7 @@ import { CartFinder } from './pages/CartFinder';
 import { Households } from '@/components/home/households/households';
 import { Settings } from '@/components/home/settings/Settings';
 import { useGuestStore } from '@/stores/guestStore';
+import Index from '@/pages/Index';
 
 const queryClient = new QueryClient();
 
@@ -56,8 +57,23 @@ function AppRoutes() {
 
   return (
     <Routes>
+      {/* Public / auth routes */}
       <Route path="/welcome" element={<Welcome />} />
       <Route path="/auth" element={<Auth />} />
+
+      {/* Main landing screen for logged-in users or guests */}
+      <Route
+        path="/"
+        element={
+          user || isGuest ? (
+            <Index />
+          ) : (
+            <Navigate to="/welcome" replace />
+          )
+        }
+      />
+
+      {/* Home dashboard */}
       <Route
         path="/home"
         element={
@@ -66,17 +82,8 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
-      <Route
-        path="/"
-        element={
-          user || isGuest ? (
-            <Navigate to="/home" replace />
-          ) : (
-            <Navigate to="/welcome" replace />
-          )
-        }
-      />
-      {/* Placeholder routes for future implementation */}
+
+      {/* Feature routes */}
       <Route
         path="/add-item"
         element={
@@ -85,6 +92,7 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
+
       <Route
         path="/home/households"
         element={
@@ -93,6 +101,7 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
+
       <Route
         path="/expiring-soon"
         element={
@@ -101,6 +110,7 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
+
       <Route
         path="/home/settings"
         element={
@@ -109,17 +119,15 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
+
+      {/* Deal search + cart finder (currently not protected, can wrap if you want) */}
       <Route
         path="/deal-search"
-        element={
-            <DealSearch />
-        }
+        element={<DealSearch />}
       />
       <Route
-        path="cart-finder"
-        element={
-          <CartFinder />
-        }
+        path="/cart-finder"
+        element={<CartFinder />}
       />
     </Routes>
   );

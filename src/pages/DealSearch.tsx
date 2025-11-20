@@ -1,369 +1,426 @@
 // src/pages/DealSearch.tsx
 
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
-// Import Checkbox components
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
-// --- Updated data types ---
-// Note: distance_m is optional, as the exact-zip RPC doesn't return it.
 type DealResult = {
   id: number;
   product_name: string;
   product_price: number;
   retailer: string;
-  zip_code: string; // Zip code is now TEXT
+  zip_code: string;
   distance_m?: number;
   image_link: string | null;
   product_size: string | null;
 };
 
 const ITEMS_PER_PAGE = 10;
-
-// Placeholder image URL
-const PLACEHOLDER_IMG = "https://via.placeholder.com/100x100.png?text=No+Image";
+const PLACEHOLDER_IMG =
+  "https://via.placeholder.com/100x100.png?text=No+Image";
 
 /**
- * Helper function to match the SQL "AND" logic
- * This checks if a product name contains ALL keywords from a filter term.
+ * Match SQL-style AND logic: product must contain *all* keywords
  */
-const productMatchesFilter = (productName: string, filterTerm: string): boolean => {
+const productMatchesFilter = (
+  productName: string,
+  filterTerm: string
+): boolean => {
   const lowerProductName = productName.toLowerCase();
-  // Split "vitamin d milk" into ['vitamin', 'd', 'milk']
   const keywords = filterTerm.trim().toLowerCase().split(/\s+/);
-  
-  // Check if the product name includes EVERY keyword
-  return keywords.every(keyword => lowerProductName.includes(keyword));
+  return keywords.every((keyword) => lowerProductName.includes(keyword));
 };
 
 export function DealSearch() {
-  // --- MODIFIED: State updates ---
   const navigate = useNavigate();
-  const [searchTerm, setSearchTerm] = useState('');
-  const [zipcode, setZipcode] = useState(''); // Zip code is now a string
-  const [radius, setRadius] = useState('10'); // New state for radius
+
+  const [searchTerm, setSearchTerm] = useState("");
+  const [zipcode, setZipcode] = useState("");
+  const [radius, setRadius] = useState("10");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [results, setResults] = useState<DealResult[]>([]); // This holds the *current page* of results
-  const [processedResults, setProcessedResults] = useState<DealResult[]>([]); // This holds *all* results
-  // --- State for filtering ---
-  // Holds the items from the search (e.g., ['milk', 'chicken'])
+  const [results, setResults] = useState<DealResult[]>([]);
+  const [processedResults, setProcessedResults] = useState<DealResult[]>([]);
+
   const [searchedItems, setSearchedItems] = useState<string[]>([]);
-  // Holds the *currently checked* filters (e.g., ['milk'])
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
 
-  /**
-   * --- Filters RPC results ---
-   * This function implements the "one result per retailer" logic.
-   * Both RPC functions sort results (by price or distance),
-   * so we just need to take the *first* one we see for each retailer.
-   */
-  // --- The search handler logic ---
+  // ---------- Search ----------
+
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
     setResults([]);
-    setProcessedResults([]); // Clear old results
+    setProcessedResults([]);
     setSearchedItems([]);
     setActiveFilters([]);
-    setCurrentPage(1); // Reset to page 1
+    setCurrentPage(1);
 
-    // --- Parse multi-item search term ---
-    const searchTerms = searchTerm.split(';')
-      .map(term => term.trim()) // Remove whitespace
-      .filter(term => term.length > 0); // Remove empty strings
+    const searchTerms = searchTerm
+      .split(";")
+      .map((term) => term.trim())
+      .filter((term) => term.length > 0);
+
+    const radiusNum = parseInt(radius, 10);
 
     if (searchTerms.length === 0) {
-      setError('Please enter at least one item name.');
-      setLoading(false);
-      return;
-    }
-
-    // --- Validation ---
-    const radiusNum = parseInt(radius, 10);
-    if (!searchTerm.trim()) {
-      setError('Please enter an item name.');
+      setError("Please enter at least one item name.");
       setLoading(false);
       return;
     }
     if (!/^\d{5}$/.test(zipcode)) {
-      setError('Please enter a valid 5-digit zip code.');
+      setError("Please enter a valid 5-digit zip code.");
       setLoading(false);
       return;
     }
     if (isNaN(radiusNum) || radiusNum <= 0) {
-      setError('Please enter a search radius greater than 0.');
+      setError("Please enter a search radius greater than 0.");
       setLoading(false);
       return;
     }
 
     try {
-      // --- Call new RPCs with the array ---
-      let rawData: DealResult[] = [];
       const meters = Math.round(radiusNum * 1609.34);
 
-      const { data, error: e2 } = await supabase
-        .rpc('find_all_deals_v2', { 
-          user_zip: zipcode, 
-          search_terms: searchTerms, // Pass the array
-          radius_meters: meters, 
-          max_rows: 500 
-        });
+      const { data, error: e2 } = await supabase.rpc("find_all_deals_v2", {
+        user_zip: zipcode,
+        search_terms: searchTerms,
+        radius_meters: meters,
+        max_rows: 500,
+      });
 
       if (e2) throw e2;
-      
-      if (data && data.length > 0) {
-        rawData = data as DealResult[];
-      }
-      if (rawData.length > 0) {
-        // const allFilteredDeals = processResults(rawData);
-        setProcessedResults(rawData); // Store all deals
-        // Set up filters
-        setSearchedItems(searchTerms); // For building the UI
-        setActiveFilters(searchTerms); // For filtering (default all)
-      } else {
-        setError('No deals found for the given search criteria.');
-        setResults([]); 
+
+      if (!data || !Array.isArray(data) || data.length === 0) {
+        setError(
+          "No deals found for this search. Try another product, zip code, or radius."
+        );
+        setLoading(false);
+        return;
       }
 
+      const mappedResults: DealResult[] = data.map((row: any) => ({
+        id: row.id,
+        product_name: row.product_name,
+        product_price: row.product_price,
+        retailer: row.retailer,
+        zip_code: row.zip_code,
+        distance_m: row.distance_m ?? undefined,
+        image_link: row.image_link ?? null,
+        product_size: row.product_size ?? null,
+      }));
+
+      // We keep all rows; filtering is done client-side
+      setProcessedResults(mappedResults);
+      setSearchedItems(searchTerms);
+      setActiveFilters(searchTerms); // start with all filters on
     } catch (err: any) {
-      console.error('Error fetching deals:', err);
-      setError(err.message || 'Failed to fetch deals.');
+      console.error("Error fetching deals:", err);
+      setError(err.message || "An unexpected error occurred.");
     } finally {
       setLoading(false);
     }
   };
 
-  /**
-   * --- Effect to filter and paginate results ---
-   * This effect runs whenever the "master list" or "active filters" change.
-   */
+  // ---------- Filtering + Pagination ----------
+
   useEffect(() => {
     if (processedResults.length === 0) {
       setResults([]);
       return;
     }
 
-    // 1. Filter the master list
-    const filteredDeals = processedResults.filter(deal => {
-      // Check if the deal's product name contains ANY of the *active* filters
-      return activeFilters.some(filter => 
-        productMatchesFilter(deal.product_name, filter)
-      );
-    });
+    const filteredDeals =
+      activeFilters.length === 0
+        ? processedResults
+        : processedResults.filter((deal) =>
+            activeFilters.some((filter) =>
+              productMatchesFilter(deal.product_name, filter)
+            )
+          );
 
-    // 2. Paginate the filtered list
     const totalPages = Math.ceil(filteredDeals.length / ITEMS_PER_PAGE);
     const newCurrentPage = Math.min(currentPage, totalPages) || 1;
     setCurrentPage(newCurrentPage);
-    
+
     const startIndex = (newCurrentPage - 1) * ITEMS_PER_PAGE;
     const endIndex = startIndex + ITEMS_PER_PAGE;
-    
     setResults(filteredDeals.slice(startIndex, endIndex));
+  }, [processedResults, activeFilters, currentPage]);
 
-  }, [processedResults, activeFilters, currentPage]); // Re-run when these change
-
-
-  // --- Handler for changing filters ---
   const handleFilterChange = (checked: boolean, item: string) => {
-    setActiveFilters(prevFilters => {
+    setActiveFilters((prevFilters) => {
       if (checked) {
-        // Add item to filter
         return [...prevFilters, item];
       } else {
-        // Remove item from filter
-        return prevFilters.filter(f => f !== item);
+        return prevFilters.filter((f) => f !== item);
       }
     });
-    // Reset to page 1 when filters change
-    setCurrentPage(1); 
+    setCurrentPage(1);
   };
-  
-  // --- Pagination handlers ---
+
   const totalPages = Math.ceil(
-    processedResults.filter(deal => 
-      activeFilters.some(filter => 
-        productMatchesFilter(deal.product_name, filter)
-      )
+    (activeFilters.length === 0
+      ? processedResults
+      : processedResults.filter((deal) =>
+          activeFilters.some((filter) =>
+            productMatchesFilter(deal.product_name, filter)
+          )
+        )
     ).length / ITEMS_PER_PAGE
   );
 
   const handleNextPage = () => {
-    setCurrentPage(prev => Math.min(prev + 1, totalPages));
+    setCurrentPage((prev) => Math.min(prev + 1, totalPages));
   };
 
   const handlePrevPage = () => {
-    setCurrentPage(prev => Math.max(prev - 1, 1));
+    setCurrentPage((prev) => Math.max(prev - 1, 1));
   };
 
+  // ---------- UI ----------
+
   return (
-    <div className="container mx-auto p-4">
-      {/* ⬇️ NEW: Button to link to the new page ⬇️ */}
-      <div className="mb-4 p-4 border rounded-lg bg-gray-50/50">
-        <h2 className="text-xl font-semibold">Want to optimize your whole cart?</h2>
-        <p className="text-gray-600 mb-2">Find the single cheapest store for all your items.</p>
-        <button onClick={() => navigate('/cart-finder')}>
-          Use Cart Optimizer
-        </button>
-      </div>
-      <h1 className="text-2xl font-bold mb-4">Grocery Deal Finder</h1>
-      
-      {/* --- The search form --- */}
-      <form onSubmit={handleSearch} className="flex flex-col gap-1 mb-4">
-        
-        {/* --- 1. The Row of Inputs & Buttons --- */}
-        <div className="flex flex-col sm:flex-row gap-2">
-          {/* Item Search Input */}
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="e.g., milk; chicken"
-            className="border p-2 rounded-md flex-grow" // flex-grow
-            required
-          />
+    <div className="min-h-screen bg-gradient-background text-foreground">
+      <div className="mx-auto max-w-3xl px-4 py-6 space-y-6">
+        {/* Hero */}
+        <div className="rounded-3xl border border-border/60 bg-card shadow-soft px-5 py-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-2">
+              <div className="inline-flex items-center gap-2 rounded-full bg-accent/10 px-3 py-1 text-xs font-medium text-accent">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_12px_theme(colors.accent.DEFAULT)]" />
+                Weekly deals · Prox
+              </div>
+              <h1 className="text-2xl font-semibold tracking-tight">
+                Grocery deal finder
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Search for a product and instantly see who has the best price
+                around you.
+              </p>
+            </div>
 
-          {/* Zip Code Input */}
-          <input
-            type="text" 
-            maxLength={5} 
-            value={zipcode}
-            onChange={(e) => setZipcode(e.target.value)}
-            placeholder="Zip Code"
-            className="border p-2 rounded-md sm:w-32" 
-            required
-          />
-          
-          {/* Radius Input */}
-          <div className="flex items-center border p-2 rounded-md sm:w-32">
-            <input
-              type="number" 
-              min="1"
-              value={radius}
-              onChange={(e) => setRadius(e.target.value)}
-              placeholder="Radius"
-              className="border-none p-0 w-full focus:outline-none focus:ring-0"
-              required
-            />
-            <span className="text-sm text-gray-500 ml-1">miles</span>
+            <div className="mt-2 sm:mt-0">
+              <Button
+                size="sm"
+                className="rounded-full bg-accent px-4 text-xs font-semibold text-accent-foreground shadow-glow hover:bg-accent/90"
+                onClick={() => navigate("/cart-finder")}
+              >
+                Optimize whole cart
+              </Button>
+            </div>
           </div>
-
-          {/* Search Button */}
-          <button
-            type="submit"
-            disabled={loading}
-            className="bg-blue-600 text-white px-4 py-2 rounded-md disabled:bg-gray-400"
-          >
-            {loading ? 'Searching...' : 'Search'}
-          </button>
         </div>
 
-        {/* --- 2. The Instruction Text (now outside the row) --- */}
-        <p className="text-xs text-gray-500 mt-1">
-          To search multiple items, separate them with a semicolon ( ; ).
-        </p>
-      
-      </form>
+        {/* Search + filters card */}
+        <div className="rounded-2xl border border-border/60 bg-card shadow-soft px-4 py-5 space-y-5">
+          <form onSubmit={handleSearch} className="space-y-4">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]">
+              <div className="flex flex-col gap-1.5">
+                <Label
+                  htmlFor="searchTerm"
+                  className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground"
+                >
+                  Product
+                </Label>
+                <Input
+                  id="searchTerm"
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="e.g., orange juice; chicken thighs; cereal"
+                  className="text-sm"
+                />
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  You can search multiple items at once by separating them with a
+                  semicolon <span className="font-mono">;</span>.
+                </p>
+              </div>
 
-      {/* Error Message */}
-      {error && <div className="text-red-500">{error}</div>}
+              <div className="flex flex-col gap-1.5">
+                <Label
+                  htmlFor="zipcode"
+                  className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground"
+                >
+                  Zip code
+                </Label>
+                <Input
+                  id="zipcode"
+                  type="text"
+                  value={zipcode}
+                  onChange={(e) => setZipcode(e.target.value)}
+                  placeholder="e.g., 90025"
+                  className="text-sm"
+                />
+              </div>
 
-      {/* --- Filter UI --- */}
-      {searchedItems.length > 0 && (
-        <div className="mb-4 p-4 border rounded-lg">
-          <h3 className="font-semibold mb-2">Filter Results</h3>
-          <div className="flex flex-wrap gap-x-4 gap-y-2">
-            {searchedItems.map(item => (
-              <div key={item} className="flex items-center space-x-2">
-                <Checkbox
-                  id={`filter-${item}`}
-                  checked={activeFilters.includes(item)}
-                  onCheckedChange={(checked) => {
-                    handleFilterChange(checked as boolean, item);
+              <div className="flex flex-col gap-1.5">
+                <Label
+                  htmlFor="radius"
+                  className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground"
+                >
+                  Radius (miles)
+                </Label>
+                <Input
+                  id="radius"
+                  type="number"
+                  min="1"
+                  value={radius}
+                  onChange={(e) => setRadius(e.target.value)}
+                  placeholder="10"
+                  className="text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <Button
+                type="submit"
+                disabled={loading}
+                className="w-full rounded-full py-2.5 text-sm font-semibold bg-accent text-accent-foreground shadow-glow hover:bg-accent/90 sm:w-auto"
+              >
+                {loading ? "Searching deals..." : "Search deals"}
+              </Button>
+
+              {error && (
+                <span className="text-xs font-medium text-red-600 sm:text-right">
+                  {error}
+                </span>
+              )}
+            </div>
+          </form>
+
+          {/* Filters */}
+          {searchedItems.length > 0 && (
+            <div className="space-y-2 rounded-xl border border-border/60 bg-background/40 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                  Filter by search term
+                </p>
+                {activeFilters.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveFilters([])}
+                    className="text-[11px] font-medium text-accent hover:underline"
+                  >
+                    Clear filters
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-3">
+                {searchedItems.map((item) => (
+                  <label
+                    key={item}
+                    className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-card/60 px-3 py-1 text-xs"
+                  >
+                    <Checkbox
+                      checked={activeFilters.includes(item)}
+                      onCheckedChange={(checked) =>
+                        handleFilterChange(checked === true, item)
+                      }
+                    />
+                    <span className="truncate">{item}</span>
+                  </label>
+                ))}
+              </div>
+              {searchedItems.length > 1 && activeFilters.length === 0 && (
+                <p className="text-[11px] text-muted-foreground">
+                  Tip: check one or more items above to see the best price by
+                  search term.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Results */}
+        <div className="space-y-4 rounded-2xl border border-border/60 bg-card shadow-soft px-4 py-5">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-base font-semibold">Results</h2>
+            {processedResults.length > 0 && (
+              <span className="text-xs text-muted-foreground">
+                Showing {results.length} of {processedResults.length} matching
+                deals
+              </span>
+            )}
+          </div>
+
+          {results.length === 0 && !loading && (
+            <p className="text-sm text-muted-foreground">
+              No deals found yet. Try a different product, radius, or zip code.
+            </p>
+          )}
+
+          <ul className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {results.map((deal) => (
+              <li
+                key={deal.id}
+                className="flex flex-col rounded-xl border border-border/60 bg-background/50 p-3"
+              >
+                <img
+                  src={deal.image_link || PLACEHOLDER_IMG}
+                  alt={deal.product_name}
+                  className="h-32 w-full flex-shrink-0 rounded-md border bg-gray-50 object-cover"
+                  onError={(e) => {
+                    e.currentTarget.src = PLACEHOLDER_IMG;
                   }}
                 />
-                <Label
-                  htmlFor={`filter-${item}`}
-                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                >
-                  {item}
-                </Label>
-              </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">
+                    {deal.product_name}
+                  </p>
+                  {deal.product_size && (
+                    <p className="text-xs text-muted-foreground">
+                      Size: {deal.product_size}
+                    </p>
+                  )}
+                  <p className="mt-1 text-lg font-bold text-green-600">
+                    ${deal.product_price.toFixed(2)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {deal.retailer} · Zip {deal.zip_code}
+                  </p>
+                  {deal.distance_m != null && (
+                    <p className="text-[11px] text-muted-foreground">
+                      ~{(deal.distance_m / 1609.34).toFixed(1)} miles away
+                    </p>
+                  )}
+                </div>
+              </li>
             ))}
-          </div>
+          </ul>
+
+          {totalPages > 1 && (
+            <div className="mt-2 flex items-center justify-center gap-3 text-xs">
+              <Button
+                variant="outline"
+                onClick={handlePrevPage}
+                disabled={currentPage === 1}
+                className="rounded-full px-3 py-1 text-xs disabled:opacity-60"
+              >
+                Previous
+              </Button>
+              <span className="text-muted-foreground">
+                Page {currentPage} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                onClick={handleNextPage}
+                disabled={currentPage === totalPages}
+                className="rounded-full px-3 py-1 text-xs disabled:opacity-60"
+              >
+                Next
+              </Button>
+            </div>
+          )}
         </div>
-      )}
-
-      {/* --- The results list --- */}
-      <div className="mt-6">
-        <h2 className="text-xl font-semibold">Results</h2>
-        {results.length === 0 && !loading && (
-          <p>No deals found. Try another search.</p>
-        )}
-        <ul className="space-y-2">
-          {results.map((deal) => (
-            <li key={deal.id} className="border p-3 rounded-lg flex items-center gap-4">
-              <img src={deal.image_link || PLACEHOLDER_IMG} alt={deal.product_name} 
-              className="w-20 h-20 object-cover rounded-md border bg-gray-50"
-              onError={(e) => {
-                e.currentTarget.src = PLACEHOLDER_IMG;
-              }} />
-              <div>
-                <p className="text-lg font-medium">{deal.product_name}</p>
-                {deal.product_size && (
-                  <p className="text-sm text-gray-500">Size: {deal.product_size}</p>
-                )}
-                <p className="text-xl font-bold text-green-600">
-                  ${deal.product_price.toFixed(2)}
-                </p>
-                <p className="text-gray-600">{deal.retailer}</p>
-                <p className="text-sm text-gray-500">Zip: {deal.zip_code}</p>
-                
-                {/* Display distance in miles or "In your zip" */}
-                {deal.distance_m != null ? (
-                  <p className="text-sm text-gray-500">
-                    {(deal.distance_m / 1609.34).toFixed(1)} miles away
-                  </p>
-                ) : (
-                  <p className="text-sm text-gray-500">
-                    In your zip code
-                  </p>
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
-
-        {/* --- Pagination Controls --- */}
-        {processedResults.length > ITEMS_PER_PAGE && (
-          <div className="flex justify-between items-center mt-4">
-            <button
-              variant="outline"
-              onClick={handlePrevPage}
-              disabled={currentPage === 1}
-              className="bg-blue-600 text-white px-4 py-2 rounded-md disabled:bg-gray-400"
-            >
-              Previous
-            </button>
-            <span className="text-sm text-gray-600">
-              Page {currentPage} of {totalPages}
-            </span>
-            <button
-              variant="outline"
-              onClick={handleNextPage}
-              disabled={currentPage === totalPages}
-              className="bg-blue-600 text-white px-4 py-2 rounded-md disabled:bg-gray-400"
-            >
-              Next
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-// src/pages/CartFinder.tsx (REPLACE the whole file)
+// src/pages/CartFinder.tsx
 
 import React, { useState } from 'react';
 import { supabase } from '@/integrations/supabase/client'; 
@@ -78,6 +78,7 @@ export function CartFinder() {
   const [editableCartItems, setEditableCartItems] = useState<EditableCartItem[]>([]);
   const [result, setResult] = useState<OptimizedCart | null>(null);
   const [singleStoreResults, setSingleStoreResults] = useState<SingleStoreResult[]>([]);
+  const [refineOpen, setRefineOpen] = useState(false); // UI-only: controls collapse
 
   /**
    * -----------------------------------------------------------------
@@ -231,7 +232,6 @@ export function CartFinder() {
    * Core Optimizer function (Production Version)
    * -----------------------------------------------------------------
    */
-  // ⬇️ MODIFIED: This function now takes the full JSON object array ⬇️
   const handleRunOptimizer = async (itemsToFind: EditableCartItem[]) => {
     console.log("--- handleRunOptimizer: START ---");
     console.time("Total Search Time"); 
@@ -264,9 +264,9 @@ export function CartFinder() {
       console.log("handleRunOptimizer: Calling RPC 'get_deal_menu_v7'...");
       console.time("SQL Query Time");
       const { data: rawData, error: rpcError } = await supabase
-        .rpc('get_deal_menu_v7', { // ❗️ Calls the new v6 function
+        .rpc('get_deal_menu_v7', { 
           user_zip: zipcode, 
-          items_to_find: itemsToFind, // ❗️ Passes the full JSON
+          items_to_find: itemsToFind,
           radius_meters: meters
         });
       
@@ -284,7 +284,7 @@ export function CartFinder() {
         console.log("handleRunOptimizer: Calling findBestCart...");
         const { bestCart, allStoreCarts } = findBestCart(
           dealMenu, 
-          searchTerms, // Pass just the names
+          searchTerms,
           retailerLimit
         );
         
@@ -351,7 +351,6 @@ export function CartFinder() {
     setInitialSearchDone(true);
     
     console.log("handleInitialSearch: Running optimizer with initial items:", initialItems);
-    // ⬇️ MODIFIED: Passes the new JSON object array ⬇️
     handleRunOptimizer(initialItems);
   };
 
@@ -360,7 +359,6 @@ export function CartFinder() {
    */
   const handleReRunSearch = () => {
     console.log("--- handleReRunSearch: START ---");
-    // ⬇️ MODIFIED: We no longer combine strings. We just pass the table state. ⬇️
     console.log("handleReRunSearch: Running optimizer with refined items:", editableCartItems);
     handleRunOptimizer(editableCartItems);
   };
@@ -372,236 +370,352 @@ export function CartFinder() {
   };
 
   return (
-    <div className="container mx-auto p-4">
-      <h1 className="text-2xl font-bold mb-4">Cart Optimizer</h1>
-      <p className="mb-4 text-gray-600">
-        Find the cheapest combination of stores for your whole cart.
-      </p>
-
-      <form onSubmit={handleInitialSearch} className="flex flex-col gap-4 mb-4">
-        <div className="flex-grow">
-          <Label htmlFor="items" className="text-base font-semibold">1. Enter Your Items</Label>
-          <input
-            id="items"
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="e.g., milk; chicken; eggs"
-            className="border p-2 rounded-md w-full" 
-            required
-          />
-          <p className="text-xs text-gray-500 mt-1">
-            Separate items with a semicolon ( ; ).
-          </p>
+    <div className="min-h-screen bg-gradient-background text-foreground">
+      <div className="mx-auto flex max-w-4xl flex-col gap-6 px-4 py-6">
+        {/* Header card */}
+        <div className="rounded-3xl border border-border/60 bg-card px-5 py-4 shadow-soft">
+          <div className="space-y-3">
+            <div className="inline-flex items-center gap-2 rounded-full bg-accent/10 px-3 py-1 text-xs font-medium text-accent">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_10px_theme(colors.accent.DEFAULT)]" />
+              Cart tools · Prox
+            </div>
+            <h1 className="text-2xl font-semibold tracking-tight">
+              Cart Optimizer
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Find the cheapest combination of stores for your whole cart.
+              Paste your list once and let Prox do the math.
+            </p>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div>
-            <Label htmlFor="zip" className="text-base font-semibold">Zip Code</Label>
-            <input id="zip" type="text" maxLength={5} value={zipcode}
-              onChange={(e) => setZipcode(e.target.value)}
-              placeholder="5-digit zip" className="border p-2 rounded-md w-full" required />
-          </div>
-          <div>
-            <Label htmlFor="radius" className="text-base font-semibold">Radius</Label>
-            <div className="flex items-center border p-2 rounded-md">
-              <input id="radius" type="number" min="1" value={radius}
-                onChange={(e) => setRadius(e.target.value)}
-                placeholder="e.g., 10" className="border-none p-0 w-full focus:outline-none focus:ring-0" required />
-              <span className="text-sm text-gray-500 ml-1">miles</span>
+        {/* Form + refine card */}
+        <div className="space-y-6 rounded-2xl border border-border/60 bg-card px-4 py-5 shadow-soft">
+          {/* Step 1: search form */}
+          <form onSubmit={handleInitialSearch} className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="items" className="text-sm font-semibold">
+                1. Enter your items
+              </Label>
+              <Input
+                id="items"
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="e.g., milk; chicken; eggs; cereal"
+                className="text-sm"
+                required
+              />
+              <p className="text-xs text-muted-foreground">
+                Separate items with a semicolon <span className="font-mono">;</span> so we treat
+                each as its own product.
+              </p>
             </div>
-          </div>
-          <div>
-            <Label htmlFor="retailer-count" className="text-base font-semibold">Max Stores</Label>
-            <Select value={retailerCountLimit} onValueChange={setRetailerCountLimit}>
-              <SelectTrigger id="retailer-count" className="w-full">
-                <SelectValue placeholder="Select max stores" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="1">1 Store</SelectItem>
-                <SelectItem value="2">2 Stores</SelectItem>
-                <SelectItem value="3">3 Stores</SelectItem>
-                <SelectItem value="4">4 Stores</SelectItem>
-                <SelectItem value="5">5 Stores</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        
-        <Button
-          type="submit"
-          disabled={loading}
-          className="w-full text-lg p-6"
-        >
-          {loading ? 'Loading...' : 'Load Item List & Search'}
-        </Button>
-      </form>
-      
-      {error && <div className="text-red-500 font-semibold p-3 bg-red-50 rounded-lg">{error}</div>}
 
-      {initialSearchDone && (
-        <div className="mt-6">
-          <h2 className="text-xl font-semibold mb-2">2. Refine Your Search (Optional)</h2>
-          <div className="flex flex-col gap-2">
-            <div className="grid grid-cols-4 gap-2 font-semibold">
-              <Label>Product Name</Label>
-              <Label>Brand</Label>
-              <Label>Size</Label>
-              <Label>Additional Details</Label>
-            </div>
-            {editableCartItems.map((item, index) => (
-              <div key={index} className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="zip" className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                  Zip code
+                </Label>
                 <Input
-                  value={item.name}
-                  onChange={(e) => handleEditCartItem(index, 'name', e.target.value)}
-                  placeholder="e.g., milk"
-                />
-                <Input
-                  value={item.brand}
-                  onChange={(e) => handleEditCartItem(index, 'brand', e.target.value)}
-                  placeholder="e.g., Lactaid"
-                />
-                <Input
-                  value={item.size}
-                  onChange={(e) => handleEditCartItem(index, 'size', e.target.value)}
-                  placeholder="e.g., 1 gal"
-                />
-                <Input
-                  value={item.details}
-                  onChange={(e) => handleEditCartItem(index, 'details', e.target.value)}
-                  placeholder="e.g., whole"
+                  id="zip"
+                  type="text"
+                  maxLength={5}
+                  value={zipcode}
+                  onChange={(e) => setZipcode(e.target.value)}
+                  placeholder="5-digit zip"
+                  className="text-sm"
+                  required
                 />
               </div>
-            ))}
-          </div>
-          <Button
-            onClick={handleReRunSearch}
-            disabled={loading}
-            className="w-full text-lg p-6 mt-4"
-          >
-            {loading ? 'Finding Best Cart...' : 'Re-run Search'}
-          </Button>
 
-          {/* --- Results Display (All Typos Fixed) --- */}
-          <div className="mt-6">
-            {singleStoreResults.length > 0 && !loading && (
-              <div>
-                <h2 className="text-xl font-semibold">Best Price by Retailer</h2>
-                <Accordion type="multiple" className="w-full mt-2 space-y-2">
-                  {singleStoreResults.map(store => {
-                    const storeId = `${store.retailer}@${store.zip_code}`;
-                    return (
-                      <AccordionItem value={storeId} key={storeId} className="border p-2 rounded-lg">
-                        <AccordionTrigger className="p-2 hover:no-underline">
-                          <div className="flex justify-between w-full items-center">
-                            <span className="text-lg font-bold text-left">{store.retailer} (Zip: {store.zip_code})</span>
-                            <span className="text-xl font-bold text-green-700 pr-4">${store.total_cart_price.toFixed(2)}</span>
-                          </div>
-                        </AccordionTrigger>
-                        <AccordionContent className="p-2">
-                          <ul className="space-y-3 pt-2">
-                            {store.items_found.map(item => (
-                              <li key={item.product_name} className="flex items-center gap-4 border-b pb-3 last:border-b-0">
-                                <img
-                                  src={item.image_link || PLACEHOLDER_IMG}
-                                  alt={item.product_name}
-                                  className="w-20 h-20 object-cover rounded-md border bg-gray-50 flex-shrink-0"
-                                  onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMG; }}
-                                />
-                                <div className="min-w-0">
-                                  <p className="font-medium truncate">{item.product_name}</p>
-                                  {item.product_size && (
-                                    <p className="text-sm text-gray-500">{item.product_size}</p>
-                                  )}
-                                  <p className="text-lg font-bold text-green-600">${item.product_price.toFixed(2)}</p>
-                                </div>
-                              </li>
-                            ))}
-                          </ul>
-                        </AccordionContent>
-                      </AccordionItem>
-                    )
-                  })}
-                </Accordion>
-              </div>
-            )}
-
-            {result && !loading && (
-              <div>
-                <h2 className="text-xl font-semibold">Cheapest Combination Found!</h2>
-                <div className="mt-2 border p-4 rounded-lg bg-green-50/50">
-                  <h3 className="text-2xl font-bold text-green-700">
-                    Total Price: ${result.total_cart_price.toFixed(2)}
-                  </h3>
-                  <p className="text-lg font-semibold">
-                    Using {result.stores.length} store(s): 
-                    {result.stores.map(storeId => storeId.replace('@', ' (Zip: ') + ')').join(', ')}
-                  </p>
-                  <hr className="my-3" />
-                  {/* --- NEW ACCORDION DISPLAY --- */}
-                  <h4 className="font-semibold mb-2">Cart Details by Store:</h4>
-                  <Accordion type="multiple" className="w-full">
-                    {/* Group items by store */}
-                    {Array.from(
-                      result.items_found.reduce((acc, item) => {
-                        const key: StoreID = `${item.retailer}@${item.zip_code}`;
-                        if (!acc.has(key)) acc.set(key, []);
-                        acc.get(key)!.push(item);
-                        return acc;
-                      }, new Map<StoreID, OptimizedCartItem[]>())
-                    ).map(([storeId, items]) => (
-                      <AccordionItem value={storeId} key={storeId}>
-                        <AccordionTrigger>
-                          <span className="font-semibold">
-                            {storeId.replace('@', ' (Zip: ') + ')'}
-                          </span>
-                        </AccordionTrigger>
-                        <AccordionContent>
-                          <ul className="space-y-3">
-                            {items.map(item => (
-                              <li key={item.product_name} className="flex items-center gap-4 border-b pb-3 last:border-b-0">
-                                <img
-                                  src={item.image_link || PLACEHOLDER_IMG}
-                                  alt={item.product_name}
-                                  className="w-20 h-20 object-cover rounded-md border bg-gray-50 flex-shrink-0"
-                                  onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMG; }}
-                                />
-                                <div className="min-w-0">
-                                  <p className="font-medium truncate">{item.product_name}</p>
-                                  {item.product_size && (
-                                    <p className="text-sm text-gray-500">{item.product_size}</p>
-                                  )}
-                                  <p className="text-lg font-bold text-green-600">${item.product_price.toFixed(2)}</p>
-                                  <p className="text-xs text-gray-500">(Searched for: "{item.searched_item}")</p>
-                                </div>
-                              </li>
-                            ))}
-                          </ul>
-                        </AccordionContent>
-                      </AccordionItem>
-                    ))}
-                  </Accordion>
-
-                  {result.items_missing.length > 0 && (
-                    <>
-                      <h4 className="font-semibold mb-2 mt-3 text-red-600">Missing Items:</h4>
-                      <p className="text-sm text-gray-600">
-                        Could not find these items: {result.items_missing.join(', ')}
-                      </p>
-                    </>
-                  )}
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="radius" className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                  Search radius (miles)
+                </Label>
+                <div className="flex items-center gap-2 rounded-md border border-input bg-background px-3 py-2">
+                  <input
+                    id="radius"
+                    type="number"
+                    min="1"
+                    value={radius}
+                    onChange={(e) => setRadius(e.target.value)}
+                    placeholder="10"
+                    className="w-full border-none bg-transparent p-0 text-sm outline-none focus:ring-0"
+                    required
+                  />
+                  <span className="text-[11px] text-muted-foreground">miles</span>
                 </div>
               </div>
-            )}
+
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="retailer-count" className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                  Max # of stores
+                </Label>
+                <Select value={retailerCountLimit} onValueChange={setRetailerCountLimit}>
+                  <SelectTrigger id="retailer-count" className="text-sm">
+                    <SelectValue placeholder="Select max stores" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">1 store (single trip)</SelectItem>
+                    <SelectItem value="2">2 stores</SelectItem>
+                    <SelectItem value="3">3 stores</SelectItem>
+                    <SelectItem value="4">4 stores</SelectItem>
+                    <SelectItem value="5">5 stores</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
             
-            {!result && singleStoreResults.length === 0 && !loading && error && (
-                <p className="text-red-600 font-semibold">{error}</p>
-            )}
-            
-          </div>
+            <Button
+              type="submit"
+              disabled={loading}
+              className="mt-1 w-full rounded-full py-3 text-sm font-semibold shadow-glow bg-accent text-accent-foreground hover:bg-accent/90"
+            >
+              {loading ? 'Loading…' : 'Load item list & search'}
+            </Button>
+          </form>
           
+          {error && (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+              {error}
+            </div>
+          )}
+
+          {initialSearchDone && (
+            <div className="space-y-6">
+              {/* Step 2: refine (collapsible) */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setRefineOpen((prev) => !prev)}
+                  className="flex w-full items-center justify-between rounded-xl bg-background/60 px-3 py-2 text-left transition hover:bg-background/80"
+                >
+                  <div>
+                    <h2 className="text-sm font-semibold tracking-tight">
+                      2. Refine your search{' '}
+                      <span className="text-xs font-normal text-muted-foreground">
+                        (optional)
+                      </span>
+                    </h2>
+                    <p className="text-xs text-muted-foreground">
+                      Add brands, sizes, or extra details so we match exactly what you’d buy.
+                    </p>
+                  </div>
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-accent text-lg leading-none text-accent-foreground shadow-glow">
+                    {refineOpen ? '−' : '+'}
+                  </span>
+                </button>
+
+                {refineOpen && (
+                  <>
+                    <div className="mt-3 space-y-2 rounded-xl border border-border/60 bg-background/60 p-3">
+                      <div className="grid grid-cols-4 gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                        <Label>Product name</Label>
+                        <Label>Brand</Label>
+                        <Label>Size</Label>
+                        <Label>Additional details</Label>
+                      </div>
+                      {editableCartItems.map((item, index) => (
+                        <div key={index} className="grid grid-cols-4 gap-2">
+                          <Input
+                            value={item.name}
+                            onChange={(e) => handleEditCartItem(index, 'name', e.target.value)}
+                            placeholder="e.g., milk"
+                            className="text-sm"
+                          />
+                          <Input
+                            value={item.brand}
+                            onChange={(e) => handleEditCartItem(index, 'brand', e.target.value)}
+                            placeholder="e.g., Lactaid"
+                            className="text-sm"
+                          />
+                          <Input
+                            value={item.size}
+                            onChange={(e) => handleEditCartItem(index, 'size', e.target.value)}
+                            placeholder="e.g., 1 gal"
+                            className="text-sm"
+                          />
+                          <Input
+                            value={item.details}
+                            onChange={(e) => handleEditCartItem(index, 'details', e.target.value)}
+                            placeholder="e.g., whole"
+                            className="text-sm"
+                          />
+                        </div>
+                      ))}
+                    </div>
+
+                    <Button
+                      onClick={handleReRunSearch}
+                      disabled={loading}
+                      className="mt-4 w-full rounded-full py-3 text-sm font-semibold bg-accent text-accent-foreground shadow-glow hover:bg-accent/90"
+                    >
+                      {loading ? 'Finding best cart…' : 'Re-run search'}
+                    </Button>
+                  </>
+                )}
+              </div>
+
+              {/* Results */}
+              <div className="space-y-6">
+                {singleStoreResults.length > 0 && !loading && (
+                  <div className="rounded-xl border border-border/60 bg-background/50 p-4">
+                    <h2 className="text-base font-semibold">Best price by retailer</h2>
+                    <Accordion type="multiple" className="mt-2 w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {singleStoreResults.map(store => {
+                        const storeId = `${store.retailer}@${store.zip_code}`;
+                        return (
+                          <AccordionItem
+                            value={storeId}
+                            key={storeId}
+                            className="rounded-lg border bg-card/70 lg:col-span-1 data-[state=open]:lg:col-span-3"
+                          >
+                            <AccordionTrigger className="px-4 py-3 hover:no-underline">
+                              <div className="flex w-full items-center justify-between">
+                                <span className="text-sm font-semibold text-left">
+                                  {store.retailer} (Zip: {store.zip_code})
+                                </span>
+                                <span className="text-lg font-bold text-green-700 pr-2">
+                                  ${store.total_cart_price.toFixed(2)}
+                                </span>
+                              </div>
+                            </AccordionTrigger>
+                            <AccordionContent className="px-4 pb-4 pt-1">
+                              <ul className="space-y-3 pt-2">
+                                {store.items_found.map(item => (
+                                  <li
+                                    key={item.product_name}
+                                    className="flex items-center gap-4 border-b pb-3 last:border-b-0"
+                                  >
+                                    <img
+                                      src={item.image_link || PLACEHOLDER_IMG}
+                                      alt={item.product_name}
+                                      className="h-20 w-20 flex-shrink-0 rounded-md border bg-gray-50 object-cover"
+                                      onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMG; }}
+                                    />
+                                    <div className="min-w-0">
+                                      <p className="truncate text-sm font-medium">
+                                        {item.product_name}
+                                      </p>
+                                      {item.product_size && (
+                                        <p className="text-xs text-muted-foreground">
+                                          {item.product_size}
+                                        </p>
+                                      )}
+                                      <p className="text-sm font-bold text-green-600">
+                                        ${item.product_price.toFixed(2)}
+                                      </p>
+                                    </div>
+                                  </li>
+                                ))}
+                              </ul>
+                            </AccordionContent>
+                          </AccordionItem>
+                        );
+                      })}
+                    </Accordion>
+                  </div>
+                )}
+
+                {result && !loading && (
+                  <div className="rounded-xl border border-border/60 bg-background/50 p-4">
+                    <h2 className="text-base font-semibold">
+                      Cheapest combination found
+                    </h2>
+                    <div className="mt-2 rounded-xl bg-emerald-50/70 p-4">
+                      <h3 className="text-2xl font-bold text-green-700">
+                        Total price: ${result.total_cart_price.toFixed(2)}
+                      </h3>
+                      <p className="mt-1 text-sm font-medium">
+                        Using {result.stores.length} store
+                        {result.stores.length === 1 ? '' : 's'}:{' '}
+                        {result.stores
+                          .map(storeId => storeId.replace('@', ' (Zip: ') + ')')
+                          .join(', ')}
+                      </p>
+                    </div>
+
+                    <div className="mt-4">
+                      <h4 className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                        Cart details by store
+                      </h4>
+                      <Accordion type="multiple" className="w-full">
+                        {Array.from(
+                          result.items_found.reduce((acc, item) => {
+                            const key: StoreID = `${item.retailer}@${item.zip_code}`;
+                            if (!acc.has(key)) acc.set(key, []);
+                            acc.get(key)!.push(item);
+                            return acc;
+                          }, new Map<StoreID, OptimizedCartItem[]>())
+                        ).map(([storeId, items]) => (
+                          <AccordionItem value={storeId} key={storeId}>
+                            <AccordionTrigger className="px-4 py-2 hover:no-underline">
+                              <span className="text-sm font-semibold">
+                                {storeId.replace('@', ' (Zip: ') + ')'}
+                              </span>
+                            </AccordionTrigger>
+                            <AccordionContent className="px-4 pb-4 pt-1">
+                              <ul className="space-y-3">
+                                {items.map(item => (
+                                  <li
+                                    key={item.product_name}
+                                    className="flex items-center gap-4 border-b pb-3 last:border-b-0"
+                                  >
+                                    <img
+                                      src={item.image_link || PLACEHOLDER_IMG}
+                                      alt={item.product_name}
+                                      className="h-20 w-20 flex-shrink-0 rounded-md border bg-gray-50 object-cover"
+                                      onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMG; }}
+                                    />
+                                    <div className="min-w-0">
+                                      <p className="truncate text-sm font-medium">
+                                        {item.product_name}
+                                      </p>
+                                      {item.product_size && (
+                                        <p className="text-xs text-muted-foreground">
+                                          {item.product_size}
+                                        </p>
+                                      )}
+                                      <p className="text-sm font-bold text-green-600">
+                                        ${item.product_price.toFixed(2)}
+                                      </p>
+                                      <p className="mt-1 text-[11px] text-muted-foreground">
+                                        (Searched for: "{item.searched_item}")
+                                      </p>
+                                    </div>
+                                  </li>
+                                ))}
+                              </ul>
+                            </AccordionContent>
+                          </AccordionItem>
+                        ))}
+                      </Accordion>
+
+                      {result.items_missing.length > 0 && (
+                        <div className="mt-3 rounded-lg bg-amber-50 px-4 py-3 text-xs text-amber-800">
+                          <span className="font-semibold">Missing items: </span>
+                          Could not find these items:{' '}
+                          {result.items_missing.join(', ')}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {!result &&
+                  singleStoreResults.length === 0 &&
+                  !loading &&
+                  error && (
+                    <p className="text-sm font-semibold text-red-600">
+                      {error}
+                    </p>
+                  )}
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
