@@ -3,9 +3,14 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
-// Import Checkbox components
+import { Button } from '@/components/ui/button';
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { getLatestRefreshDate, formatDistance } from '@/lib/dateUtils';
+import { useCart } from '@/contexts/CartContext';
+import { FloatingCart } from '@/components/FloatingCart';
+import { Home, Plus, Check } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 // --- Updated data types ---
 // Note: distance_m is optional, as the exact-zip RPC doesn't return it.
@@ -18,6 +23,7 @@ type DealResult = {
   distance_m?: number;
   image_link: string | null;
   product_size: string | null;
+  retailer_logo_url: string | null;
 };
 
 const ITEMS_PER_PAGE = 10;
@@ -55,6 +61,39 @@ export function DealSearch() {
   // Holds the *currently checked* filters (e.g., ['milk'])
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
+  const { addToCart, items } = useCart();
+  const { toast } = useToast();
+  const [addedItems, setAddedItems] = useState<Set<number>>(new Set());
+  const handleAdd = (deal: DealResult) => {
+    alert(`Added ${deal.product_name}`);
+    addToCart({
+      name: deal.product_name,
+      size: deal.product_size || '',
+      brand: '',
+      details: '',
+      price: deal.product_price,
+      retailer: deal.retailer,
+      logo: deal.retailer_logo_url,
+    });
+    // 1. Show Toast Notification
+    toast({
+      title: "Added to Cart",
+      description: `${deal.product_name} is in your basket.`,
+      duration: 2000,
+    });
+
+    // 2. Show Checkmark on Button
+    setAddedItems(prev => new Set(prev).add(deal.id));
+    
+    // Revert checkmark after 2 seconds
+    setTimeout(() => {
+      setAddedItems(prev => {
+        const next = new Set(prev);
+        next.delete(deal.id);
+        return next;
+      });
+    }, 2000);
+  }
 
   /**
    * --- Filters RPC results ---
@@ -103,15 +142,19 @@ export function DealSearch() {
     }
 
     try {
+      // ⬇️ NEW: Calculate minDate
+      const minDate = getLatestRefreshDate();
+
       // --- Call new RPCs with the array ---
       let rawData: DealResult[] = [];
       const meters = Math.round(radiusNum * 1609.34);
 
       const { data, error: e2 } = await supabase
-        .rpc('find_all_deals_v2', { 
+        .rpc('find_all_deals_v3', { 
           user_zip: zipcode, 
           search_terms: searchTerms, // Pass the array
           radius_meters: meters, 
+          min_date: minDate,
           max_rows: 500 
         });
 
@@ -203,82 +246,79 @@ export function DealSearch() {
   };
 
   return (
-    <div className="container mx-auto p-4">
-      {/* ⬇️ NEW: Button to link to the new page ⬇️ */}
-      <div className="mb-4 p-4 border rounded-lg bg-gray-50/50">
-        <h2 className="text-xl font-semibold">Want to optimize your whole cart?</h2>
-        <p className="text-gray-600 mb-2">Find the single cheapest store for all your items.</p>
-        <button onClick={() => navigate('/cart-finder')}>
-          Use Cart Optimizer
-        </button>
-      </div>
-      <h1 className="text-2xl font-bold mb-4">Grocery Deal Finder</h1>
+    <div className="container mx-auto p-4 max-w-2xl pb-24"> {/* Limit width for better mobile view */}
       
-      {/* --- The search form --- */}
-      <form onSubmit={handleSearch} className="flex flex-col gap-1 mb-4">
-        
-        {/* --- 1. The Row of Inputs & Buttons --- */}
+      {/* New Header with Link */}
+      <div className="flex justify-between items-center mb-6">
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="icon" onClick={() => navigate('/')}>
+            <Home className="h-5 w-5" />
+          </Button>
+          <h1 className="text-2xl font-bold">Deal Finder</h1>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => navigate('/cart-finder')}>
+          Cart Optimizer →
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => navigate('/cart')}>
+          View Cart ({items.length}) {/* Show count */}
+        </Button>
+      </div>
+      
+      <form onSubmit={handleSearch} className="flex flex-col gap-3 mb-6">
         <div className="flex flex-col sm:flex-row gap-2">
-          {/* Item Search Input */}
           <input
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="e.g., milk; chicken"
-            className="border p-2 rounded-md flex-grow" // flex-grow
+            className="border p-2 rounded-md flex-grow shadow-sm" 
             required
           />
-
-          {/* Zip Code Input */}
-          <input
-            type="text" 
-            maxLength={5} 
-            value={zipcode}
-            onChange={(e) => setZipcode(e.target.value)}
-            placeholder="Zip Code"
-            className="border p-2 rounded-md sm:w-32" 
-            required
-          />
-          
-          {/* Radius Input */}
-          <div className="flex items-center border p-2 rounded-md sm:w-32">
+          <div className="flex gap-2">
             <input
-              type="number" 
-              min="1"
-              value={radius}
-              onChange={(e) => setRadius(e.target.value)}
-              placeholder="Radius"
-              className="border-none p-0 w-full focus:outline-none focus:ring-0"
+              type="text" 
+              maxLength={5} 
+              value={zipcode}
+              onChange={(e) => setZipcode(e.target.value)}
+              placeholder="Zip Code"
+              className="border p-2 rounded-md w-24 shadow-sm" 
               required
             />
-            <span className="text-sm text-gray-500 ml-1">miles</span>
+            <div className="flex items-center border p-2 rounded-md w-24 bg-white shadow-sm">
+              <input
+                type="number" 
+                min="1"
+                value={radius}
+                onChange={(e) => setRadius(e.target.value)}
+                placeholder="10"
+                className="border-none p-0 w-full focus:outline-none focus:ring-0 text-center"
+                required
+              />
+              <span className="text-sm text-gray-500 ml-1">mi</span>
+            </div>
           </div>
-
-          {/* Search Button */}
-          <button
-            type="submit"
-            disabled={loading}
-            className="bg-blue-600 text-white px-4 py-2 rounded-md disabled:bg-gray-400"
-          >
-            {loading ? 'Searching...' : 'Search'}
-          </button>
         </div>
-
-        {/* --- 2. The Instruction Text (now outside the row) --- */}
-        <p className="text-xs text-gray-500 mt-1">
-          To search multiple items, separate them with a semicolon ( ; ).
-        </p>
-      
+        
+        <Button
+          type="submit"
+          disabled={loading}
+          className="bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-md w-full shadow-sm"
+        >
+          {loading ? 'Searching...' : 'Find Deals'}
+        </Button>
+        
+        <div className="flex justify-between text-xs text-gray-500 px-1">
+          <p>Separate multiple items with a semicolon ( ; ).</p>
+          <p>Prices reflect the most recent weekly update.</p> {/* ⬅️ Note Added */}
+        </div>
       </form>
+      
+      {error && <div className="text-red-500 bg-red-50 p-3 rounded-md mb-4 text-sm font-medium">{error}</div>}
 
-      {/* Error Message */}
-      {error && <div className="text-red-500">{error}</div>}
-
-      {/* --- Filter UI --- */}
       {searchedItems.length > 0 && (
-        <div className="mb-4 p-4 border rounded-lg">
-          <h3 className="font-semibold mb-2">Filter Results</h3>
-          <div className="flex flex-wrap gap-x-4 gap-y-2">
+        <div className="mb-6 p-4 border rounded-lg bg-gray-50">
+          <h3 className="font-semibold mb-3 text-sm uppercase tracking-wide text-gray-700">Filter Results</h3>
+          <div className="flex flex-wrap gap-x-6 gap-y-2">
             {searchedItems.map(item => (
               <div key={item} className="flex items-center space-x-2">
                 <Checkbox
@@ -290,7 +330,7 @@ export function DealSearch() {
                 />
                 <Label
                   htmlFor={`filter-${item}`}
-                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                  className="text-sm font-medium leading-none cursor-pointer"
                 >
                   {item}
                 </Label>
@@ -300,71 +340,85 @@ export function DealSearch() {
         </div>
       )}
 
-      {/* --- The results list --- */}
       <div className="mt-6">
-        <h2 className="text-xl font-semibold">Results</h2>
-        {results.length === 0 && !loading && (
-          <p>No deals found. Try another search.</p>
+        {results.length === 0 && !loading && processedResults.length === 0 && (
+           <p className="text-center text-gray-500 mt-8">No recent deals found. Try adjusting your search.</p>
         )}
-        <ul className="space-y-2">
-          {results.map((deal) => (
-            <li key={deal.id} className="border p-3 rounded-lg flex items-center gap-4">
-              <img src={deal.image_link || PLACEHOLDER_IMG} alt={deal.product_name} 
-              className="w-20 h-20 object-cover rounded-md border bg-gray-50"
-              onError={(e) => {
-                e.currentTarget.src = PLACEHOLDER_IMG;
-              }} />
-              <div>
-                <p className="text-lg font-medium">{deal.product_name}</p>
-                {deal.product_size && (
-                  <p className="text-sm text-gray-500">Size: {deal.product_size}</p>
-                )}
-                <p className="text-xl font-bold text-green-600">
-                  ${deal.product_price.toFixed(2)}
-                </p>
-                <p className="text-gray-600">{deal.retailer}</p>
-                <p className="text-sm text-gray-500">Zip: {deal.zip_code}</p>
-                
-                {/* Display distance in miles or "In your zip" */}
-                {deal.distance_m != null ? (
-                  <p className="text-sm text-gray-500">
-                    {(deal.distance_m / 1609.34).toFixed(1)} miles away
-                  </p>
-                ) : (
-                  <p className="text-sm text-gray-500">
-                    In your zip code
-                  </p>
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
+        <ul className="space-y-3">
+          {results.map((deal) => {
+            const isAdded = addedItems.has(deal.id);
 
-        {/* --- Pagination Controls --- */}
-        {processedResults.length > ITEMS_PER_PAGE && (
-          <div className="flex justify-between items-center mt-4">
-            <button
-              variant="outline"
-              onClick={handlePrevPage}
-              disabled={currentPage === 1}
-              className="bg-blue-600 text-white px-4 py-2 rounded-md disabled:bg-gray-400"
-            >
+            return (
+              <li 
+                key={deal.id} 
+                className="border p-3 rounded-lg flex gap-4 bg-white shadow-sm relative"
+              >
+                {/* Product Image */}
+                <div className="w-20 h-20 flex-shrink-0 bg-white rounded-md overflow-hidden border">
+                  <img
+                    src={deal.image_link || PLACEHOLDER_IMG}
+                    alt={deal.product_name}
+                    className="w-full h-full object-contain"
+                    onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMG; }}
+                  />
+                </div>
+                
+                {/* Content */}
+                <div className="flex-grow min-w-0 flex flex-col justify-center">
+                  <div className="flex justify-between items-start">
+                    <p className="font-semibold text-gray-900 truncate pr-2">{deal.product_name}</p>
+                    <p className="text-lg font-bold text-green-700 whitespace-nowrap">${deal.product_price.toFixed(2)}</p>
+                  </div>
+                  
+                  {deal.product_size && (
+                    <p className="text-sm text-gray-500 mb-1">{deal.product_size}</p>
+                  )}
+
+                  {/* ⬇️ NEW: Retailer Row with Logo & Distance */}
+                  <div className="flex items-center gap-2 mt-1 text-sm text-gray-700">
+                    {deal.retailer_logo_url && (
+                      <img src={deal.retailer_logo_url} alt="logo" className="h-4 w-auto object-contain" />
+                    )}
+                    <span className="font-medium">
+                      {deal.retailer} 
+                      <span className="text-gray-500 font-normal ml-1">
+                        ({formatDistance(deal.distance_m)})
+                      </span>
+                    </span>
+                  </div>
+                </div>
+
+                <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                  <Button 
+                    size="icon" 
+                    variant={isAdded ? "default" : "secondary"} // Change style on click
+                    className={`h-10 w-10 rounded-full transition-all ${isAdded ? "bg-green-600 text-white" : "bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200"}`}
+                    onClick={() => handleAdd(deal)}
+                  >
+                    {/* Swap icon on click */}
+                    {isAdded ? <Check className="h-6 w-6" /> : <Plus className="h-6 w-6" />}
+                  </Button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+        
+        {totalPages > 1 && (
+          <div className="flex justify-between items-center mt-6 pt-4 border-t">
+            <Button variant="outline" size="sm" onClick={handlePrevPage} disabled={currentPage === 1}>
               Previous
-            </button>
-            <span className="text-sm text-gray-600">
+            </Button>
+            <span className="text-xs text-gray-500">
               Page {currentPage} of {totalPages}
             </span>
-            <button
-              variant="outline"
-              onClick={handleNextPage}
-              disabled={currentPage === totalPages}
-              className="bg-blue-600 text-white px-4 py-2 rounded-md disabled:bg-gray-400"
-            >
+            <Button variant="outline" size="sm" onClick={handleNextPage} disabled={currentPage === totalPages}>
               Next
-            </button>
+            </Button>
           </div>
         )}
       </div>
+      <FloatingCart />
     </div>
   );
 }

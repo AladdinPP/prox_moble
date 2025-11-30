@@ -2,22 +2,17 @@
 
 import React, { useState } from 'react';
 import { supabase } from '@/integrations/supabase/client'; 
+import { useCart } from '@/contexts/CartContext';
+import { FloatingCart } from '@/components/FloatingCart';
 import { Button } from '@/components/ui/button'; 
 import { Label } from "@/components/ui/label";
 import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { getLatestRefreshDate, formatDistance } from '@/lib/dateUtils';
+import { useNavigate } from 'react-router-dom';
+import { Home, Search } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 // --- Data Types ---
 type EditableCartItem = {
@@ -35,6 +30,7 @@ type DealMenuItem = {
   distance_m: number;
   product_size: string | null;
   image_link: string | null;
+  retailer_logo_url: string | null;
 };
 type OptimizedCartItem = {
   searched_item: string; // The "name" from EditableCartItem
@@ -45,6 +41,7 @@ type OptimizedCartItem = {
   distance_m: number;
   product_size: string | null;
   image_link: string | null;
+  retailer_logo_url: string | null;
 };
 type StoreID = string; 
 type OptimizedCart = {
@@ -60,6 +57,7 @@ type SingleStoreResult = {
   items_found_count: number;
   distance_m: number;
   items_found: OptimizedCartItem[];
+  retailer_logo_url: string | null;
 };
 
 // Safeguard
@@ -68,6 +66,7 @@ const PLACEHOLDER_IMG = "https://via.placeholder.com/100x100.png?text=No+Image";
 
 export function CartFinder() {
   // --- State ---
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState(''); 
   const [zipcode, setZipcode] = useState(''); 
   const [radius, setRadius] = useState('10'); 
@@ -78,6 +77,38 @@ export function CartFinder() {
   const [editableCartItems, setEditableCartItems] = useState<EditableCartItem[]>([]);
   const [result, setResult] = useState<OptimizedCart | null>(null);
   const [singleStoreResults, setSingleStoreResults] = useState<SingleStoreResult[]>([]);
+  const { items: globalCartItems } = useCart();
+  const { saveOptimizedCart } = useCart();
+  const { toast } = useToast();
+
+  React.useEffect(() => {
+    if (globalCartItems.length > 0 && !initialSearchDone) {
+      const mappedItems: EditableCartItem[] = globalCartItems.map(item => ({
+        name: item.name,
+        brand: item.brand || '',
+        size: item.size || '',
+        details: item.details || '',
+      }));
+
+      setEditableCartItems(mappedItems);
+      setInitialSearchDone(true);
+
+      handleRunOptimizer(mappedItems);
+    }
+  }, [globalCartItems]);
+
+  const handleSaveCart = () => {
+    if (!result) return;
+    
+    saveOptimizedCart({
+      total_price: result.total_cart_price,
+      store_count: result.stores.length,
+      stores: result.stores,
+      items: result.items_found
+    });
+    
+    toast({ title: "Cart Saved", description: "This combination has been saved to your carts page." });
+  };
 
   /**
    * -----------------------------------------------------------------
@@ -93,13 +124,13 @@ export function CartFinder() {
     console.time("Optimizer: 1. Pre-processing");
     const topK = 5;
     const candidateStoreIds = new Set<StoreID>();
-    const storeMap = new Map<StoreID, { retailer: string, zip_code: string, distance_m: number }>();
+    const storeMap = new Map<StoreID, { retailer: string, zip_code: string, distance_m: number, logo: string|null }>();
     const priceMenu = new Map<string, Map<StoreID, DealMenuItem>>();
 
     for (const deal of dealMenu) {
       const storeId: StoreID = `${deal.retailer}@${deal.zip_code}`;
       if (!storeMap.has(storeId)) {
-        storeMap.set(storeId, { retailer: deal.retailer, zip_code: deal.zip_code, distance_m: deal.distance_m });
+        storeMap.set(storeId, { retailer: deal.retailer, zip_code: deal.zip_code, distance_m: deal.distance_m, logo: deal.retailer_logo_url });
       }
       if (!priceMenu.has(deal.searched_item_name)) {
         priceMenu.set(deal.searched_item_name, new Map<StoreID, DealMenuItem>());
@@ -187,6 +218,7 @@ export function CartFinder() {
                   distance_m: deal.distance_m,
                   product_size: deal.product_size,
                   image_link: deal.image_link,
+                  retailer_logo_url: deal.retailer_logo_url,
                 };
               }
             }
@@ -210,6 +242,7 @@ export function CartFinder() {
           items_found_count: currentCart.items_found.length,
           distance_m: storeInfo.distance_m,
           items_found: currentCart.items_found,
+          retailer_logo_url: storeInfo.logo
         });
       }
 
@@ -263,11 +296,13 @@ export function CartFinder() {
     try {
       console.log("handleRunOptimizer: Calling RPC 'get_deal_menu_v7'...");
       console.time("SQL Query Time");
+      const minDate = getLatestRefreshDate();
       const { data: rawData, error: rpcError } = await supabase
-        .rpc('get_deal_menu_v7', { // ❗️ Calls the new v6 function
+        .rpc('get_deal_menu_v8', { // ❗️ Calls the new v8 function
           user_zip: zipcode, 
           items_to_find: itemsToFind, // ❗️ Passes the full JSON
-          radius_meters: meters
+          radius_meters: meters,
+          min_date: minDate
         });
       
       const dealMenu = rawData as DealMenuItem[];
@@ -371,154 +406,118 @@ export function CartFinder() {
     setEditableCartItems(newItems);
   };
 
+  // --- Helper for Render ---
+  const renderCartItems = (items: OptimizedCartItem[]) => (
+    <ul className="space-y-3 pt-2">
+      {items.map((item, idx) => (
+        <li key={`${item.product_name}-${idx}`} className="flex items-center gap-4 border-b pb-3 last:border-b-0">
+          <img src={item.image_link || PLACEHOLDER_IMG} alt={item.product_name}
+            className="w-16 h-16 object-cover rounded-md border bg-gray-50 flex-shrink-0"
+            onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMG; }} />
+          <div className="min-w-0 text-sm">
+            <p className="font-medium truncate">{item.product_name}</p>
+            {item.product_size && <p className="text-gray-500">{item.product_size}</p>}
+            <p className="text-base font-bold text-green-600">${item.product_price.toFixed(2)}</p>
+            <p className="text-xs text-gray-400">(For: "{item.searched_item}")</p>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+
   return (
-    <div className="container mx-auto p-4">
-      <h1 className="text-2xl font-bold mb-4">Cart Optimizer</h1>
-      <p className="mb-4 text-gray-600">
-        Find the cheapest combination of stores for your whole cart.
-      </p>
+    <div className="container mx-auto p-4 max-w-2xl">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="icon" onClick={() => navigate('/')}>
+            <Home className="h-5 w-5" />
+          </Button>
+          <h1 className="text-2xl font-bold">Cart Optimizer</h1>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => navigate('/deal-search')}>
+          <Search className="h-4 w-4 mr-2" />
+          Single Deal Search
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => navigate('/cart')}>
+          View All Carts
+        </Button>
+      </div>
+
+      <p className="mb-4 text-gray-600 text-sm">Find the cheapest combination of stores for your whole cart.</p>
 
       <form onSubmit={handleInitialSearch} className="flex flex-col gap-4 mb-4">
+        {/* ... (Inputs same as before) ... */}
         <div className="flex-grow">
-          <Label htmlFor="items" className="text-base font-semibold">1. Enter Your Items</Label>
-          <input
-            id="items"
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="e.g., milk; chicken; eggs"
-            className="border p-2 rounded-md w-full" 
-            required
-          />
-          <p className="text-xs text-gray-500 mt-1">
-            Separate items with a semicolon ( ; ).
-          </p>
+          <Label htmlFor="items">1. Enter Items</Label>
+          <input id="items" type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="e.g., milk; chicken" className="border p-2 rounded-md w-full mt-1" required />
+          <p className="text-xs text-gray-500 mt-1">Separate with semicolon (;). Prices reflect most recent weekly update.</p>
         </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div>
-            <Label htmlFor="zip" className="text-base font-semibold">Zip Code</Label>
-            <input id="zip" type="text" maxLength={5} value={zipcode}
-              onChange={(e) => setZipcode(e.target.value)}
-              placeholder="5-digit zip" className="border p-2 rounded-md w-full" required />
-          </div>
-          <div>
-            <Label htmlFor="radius" className="text-base font-semibold">Radius</Label>
-            <div className="flex items-center border p-2 rounded-md">
-              <input id="radius" type="number" min="1" value={radius}
-                onChange={(e) => setRadius(e.target.value)}
-                placeholder="e.g., 10" className="border-none p-0 w-full focus:outline-none focus:ring-0" required />
-              <span className="text-sm text-gray-500 ml-1">miles</span>
-            </div>
-          </div>
-          <div>
-            <Label htmlFor="retailer-count" className="text-base font-semibold">Max Stores</Label>
-            <Select value={retailerCountLimit} onValueChange={setRetailerCountLimit}>
-              <SelectTrigger id="retailer-count" className="w-full">
-                <SelectValue placeholder="Select max stores" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="1">1 Store</SelectItem>
-                <SelectItem value="2">2 Stores</SelectItem>
-                <SelectItem value="3">3 Stores</SelectItem>
-                <SelectItem value="4">4 Stores</SelectItem>
-                <SelectItem value="5">5 Stores</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+        <div className="grid grid-cols-3 gap-2">
+           {/* ... (Zip, Radius, Max Stores Inputs same as before) ... */}
+           <div><Label>Zip</Label><input type="text" maxLength={5} value={zipcode} onChange={e=>setZipcode(e.target.value)} className="border p-2 rounded-md w-full" required/></div>
+           <div><Label>Radius</Label><input type="number" min="1" value={radius} onChange={e=>setRadius(e.target.value)} className="border p-2 rounded-md w-full" required/></div>
+           <div><Label>Stores</Label>
+             <Select value={retailerCountLimit} onValueChange={setRetailerCountLimit}>
+               <SelectTrigger><SelectValue/></SelectTrigger>
+               <SelectContent>
+                 {[1,2,3,4,5].map(n=><SelectItem key={n} value={n.toString()}>{n} Store{n>1?'s':''}</SelectItem>)}
+               </SelectContent>
+             </Select>
+           </div>
         </div>
-        
-        <Button
-          type="submit"
-          disabled={loading}
-          className="w-full text-lg p-6"
-        >
-          {loading ? 'Loading...' : 'Load Item List & Search'}
+        <Button type="submit" disabled={loading} className="bg-blue-600 hover:bg-blue-700 w-full py-2">
+          {loading ? 'Loading...' : 'Load & Search'}
         </Button>
       </form>
       
-      {error && <div className="text-red-500 font-semibold p-3 bg-red-50 rounded-lg">{error}</div>}
+      {error && <div className="text-red-500 bg-red-50 p-3 rounded-md mb-4 text-sm">{error}</div>}
 
       {initialSearchDone && (
         <div className="mt-6">
-          <h2 className="text-xl font-semibold mb-2">2. Refine Your Search (Optional)</h2>
-          <div className="flex flex-col gap-2">
-            <div className="grid grid-cols-4 gap-2 font-semibold">
-              <Label>Product Name</Label>
-              <Label>Brand</Label>
-              <Label>Size</Label>
-              <Label>Additional Details</Label>
-            </div>
-            {editableCartItems.map((item, index) => (
-              <div key={index} className="grid grid-cols-4 gap-2">
-                <Input
-                  value={item.name}
-                  onChange={(e) => handleEditCartItem(index, 'name', e.target.value)}
-                  placeholder="e.g., milk"
-                />
-                <Input
-                  value={item.brand}
-                  onChange={(e) => handleEditCartItem(index, 'brand', e.target.value)}
-                  placeholder="e.g., Lactaid"
-                />
-                <Input
-                  value={item.size}
-                  onChange={(e) => handleEditCartItem(index, 'size', e.target.value)}
-                  placeholder="e.g., 1 gal"
-                />
-                <Input
-                  value={item.details}
-                  onChange={(e) => handleEditCartItem(index, 'details', e.target.value)}
-                  placeholder="e.g., whole"
-                />
-              </div>
-            ))}
+          <h2 className="text-lg font-semibold mb-2">2. Refine Search</h2>
+          {/* ... (Editable Table same as before) ... */}
+          <div className="flex flex-col gap-2 mb-4">
+             {/* Header */}
+             <div className="grid grid-cols-4 gap-2 text-sm font-semibold text-gray-600">
+                <span>Name</span><span>Brand</span><span>Size</span><span>Details</span>
+             </div>
+             {editableCartItems.map((item, idx) => (
+               <div key={idx} className="grid grid-cols-4 gap-2">
+                 <Input value={item.name} onChange={e=>handleEditCartItem(idx,'name',e.target.value)} className="text-xs px-2 h-8"/>
+                 <Input value={item.brand} onChange={e=>handleEditCartItem(idx,'brand',e.target.value)} className="text-xs px-2 h-8"/>
+                 <Input value={item.size} onChange={e=>handleEditCartItem(idx,'size',e.target.value)} className="text-xs px-2 h-8"/>
+                 <Input value={item.details} onChange={e=>handleEditCartItem(idx,'details',e.target.value)} className="text-xs px-2 h-8"/>
+               </div>
+             ))}
           </div>
-          <Button
-            onClick={handleReRunSearch}
-            disabled={loading}
-            className="w-full text-lg p-6 mt-4"
-          >
-            {loading ? 'Finding Best Cart...' : 'Re-run Search'}
+          <Button onClick={handleReRunSearch} disabled={loading} variant="outline" className="w-full border-blue-600 text-blue-600 hover:bg-blue-50">
+            {loading ? ' optimizing...' : 'Re-run Search'}
           </Button>
 
-          {/* --- Results Display (All Typos Fixed) --- */}
-          <div className="mt-6">
+          <div className="mt-8">
+            {/* 1-Store Results */}
             {singleStoreResults.length > 0 && !loading && (
               <div>
-                <h2 className="text-xl font-semibold">Best Price by Retailer</h2>
-                <Accordion type="multiple" className="w-full mt-2 space-y-2">
+                <h2 className="text-xl font-bold mb-3">Best Single-Store Carts</h2>
+                <Accordion type="multiple" className="w-full space-y-2">
                   {singleStoreResults.map(store => {
                     const storeId = `${store.retailer}@${store.zip_code}`;
                     return (
-                      <AccordionItem value={storeId} key={storeId} className="border p-2 rounded-lg">
-                        <AccordionTrigger className="p-2 hover:no-underline">
-                          <div className="flex justify-between w-full items-center">
-                            <span className="text-lg font-bold text-left">{store.retailer} (Zip: {store.zip_code})</span>
-                            <span className="text-xl font-bold text-green-700 pr-4">${store.total_cart_price.toFixed(2)}</span>
+                      <AccordionItem value={storeId} key={storeId} className="border rounded-lg px-2 bg-white shadow-sm">
+                        <AccordionTrigger className="hover:no-underline py-3">
+                          <div className="flex items-center justify-between w-full pr-2">
+                            <div className="flex items-center gap-2 text-left">
+                              {store.retailer_logo_url && <img src={store.retailer_logo_url} className="h-5 w-auto object-contain"/>}
+                              <div>
+                                <p className="font-semibold text-gray-900">{store.retailer}</p>
+                                <p className="text-xs text-gray-500 font-normal">({formatDistance(store.distance_m)})</p>
+                              </div>
+                            </div>
+                            <span className="text-lg font-bold text-green-700">${store.total_cart_price.toFixed(2)}</span>
                           </div>
                         </AccordionTrigger>
-                        <AccordionContent className="p-2">
-                          <ul className="space-y-3 pt-2">
-                            {store.items_found.map(item => (
-                              <li key={item.product_name} className="flex items-center gap-4 border-b pb-3 last:border-b-0">
-                                <img
-                                  src={item.image_link || PLACEHOLDER_IMG}
-                                  alt={item.product_name}
-                                  className="w-20 h-20 object-cover rounded-md border bg-gray-50 flex-shrink-0"
-                                  onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMG; }}
-                                />
-                                <div className="min-w-0">
-                                  <p className="font-medium truncate">{item.product_name}</p>
-                                  {item.product_size && (
-                                    <p className="text-sm text-gray-500">{item.product_size}</p>
-                                  )}
-                                  <p className="text-lg font-bold text-green-600">${item.product_price.toFixed(2)}</p>
-                                </div>
-                              </li>
-                            ))}
-                          </ul>
-                        </AccordionContent>
+                        <AccordionContent>{renderCartItems(store.items_found)}</AccordionContent>
                       </AccordionItem>
                     )
                   })}
@@ -526,22 +525,22 @@ export function CartFinder() {
               </div>
             )}
 
+            {/* Multi-Store Result */}
             {result && !loading && (
               <div>
-                <h2 className="text-xl font-semibold">Cheapest Combination Found!</h2>
-                <div className="mt-2 border p-4 rounded-lg bg-green-50/50">
-                  <h3 className="text-2xl font-bold text-green-700">
-                    Total Price: ${result.total_cart_price.toFixed(2)}
-                  </h3>
-                  <p className="text-lg font-semibold">
-                    Using {result.stores.length} store(s): 
-                    {result.stores.map(storeId => storeId.replace('@', ' (Zip: ') + ')').join(', ')}
-                  </p>
-                  <hr className="my-3" />
-                  {/* --- NEW ACCORDION DISPLAY --- */}
-                  <h4 className="font-semibold mb-2">Cart Details by Store:</h4>
-                  <Accordion type="multiple" className="w-full">
-                    {/* Group items by store */}
+                <h2 className="text-xl font-bold mb-3 text-blue-900">Cheapest Multi-Store Combo</h2>
+                <div className="border-2 border-blue-100 rounded-xl p-4 bg-blue-50/30">
+                  <div className="flex justify-between items-center mb-4 border-b border-blue-100 pb-4">
+                     <div>
+                       <p className="text-2xl font-bold text-green-700">${result.total_cart_price.toFixed(2)}</p>
+                       <p className="text-sm text-gray-600 mt-1">Using {result.stores.length} stores</p>
+                     </div>
+                     <Button onClick={handleSaveCart} size="sm" className="bg-blue-600 text-white hover:bg-blue-700">
+                       Save Cart
+                     </Button>
+                  </div>
+                  
+                  <Accordion type="multiple" className="w-full space-y-2">
                     {Array.from(
                       result.items_found.reduce((acc, item) => {
                         const key: StoreID = `${item.retailer}@${item.zip_code}`;
@@ -549,59 +548,39 @@ export function CartFinder() {
                         acc.get(key)!.push(item);
                         return acc;
                       }, new Map<StoreID, OptimizedCartItem[]>())
-                    ).map(([storeId, items]) => (
-                      <AccordionItem value={storeId} key={storeId}>
-                        <AccordionTrigger>
-                          <span className="font-semibold">
-                            {storeId.replace('@', ' (Zip: ') + ')'}
-                          </span>
-                        </AccordionTrigger>
-                        <AccordionContent>
-                          <ul className="space-y-3">
-                            {items.map(item => (
-                              <li key={item.product_name} className="flex items-center gap-4 border-b pb-3 last:border-b-0">
-                                <img
-                                  src={item.image_link || PLACEHOLDER_IMG}
-                                  alt={item.product_name}
-                                  className="w-20 h-20 object-cover rounded-md border bg-gray-50 flex-shrink-0"
-                                  onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMG; }}
-                                />
-                                <div className="min-w-0">
-                                  <p className="font-medium truncate">{item.product_name}</p>
-                                  {item.product_size && (
-                                    <p className="text-sm text-gray-500">{item.product_size}</p>
-                                  )}
-                                  <p className="text-lg font-bold text-green-600">${item.product_price.toFixed(2)}</p>
-                                  <p className="text-xs text-gray-500">(Searched for: "{item.searched_item}")</p>
-                                </div>
-                              </li>
-                            ))}
-                          </ul>
-                        </AccordionContent>
-                      </AccordionItem>
-                    ))}
+                    ).map(([storeId, items]) => {
+                       // We need to extract the logo/distance from the first item for the header
+                       const firstItem = items[0]; 
+                       return (
+                        <AccordionItem value={storeId} key={storeId} className="border rounded-lg px-2 bg-white">
+                          <AccordionTrigger className="hover:no-underline py-2">
+                             <div className="flex items-center gap-2">
+                               {firstItem.retailer_logo_url && <img src={firstItem.retailer_logo_url} className="h-5 w-auto object-contain"/>}
+                               <div className="text-left">
+                                 <p className="font-semibold text-sm">{firstItem.retailer}</p>
+                                 <p className="text-xs text-gray-500 font-normal">({formatDistance(firstItem.distance_m)})</p>
+                               </div>
+                             </div>
+                          </AccordionTrigger>
+                          <AccordionContent>{renderCartItems(items)}</AccordionContent>
+                        </AccordionItem>
+                       );
+                    })}
                   </Accordion>
 
                   {result.items_missing.length > 0 && (
-                    <>
-                      <h4 className="font-semibold mb-2 mt-3 text-red-600">Missing Items:</h4>
-                      <p className="text-sm text-gray-600">
-                        Could not find these items: {result.items_missing.join(', ')}
-                      </p>
-                    </>
+                    <div className="mt-4 p-3 bg-red-50 rounded-md border border-red-100">
+                      <p className="text-sm font-semibold text-red-800">Missing Items:</p>
+                      <p className="text-sm text-red-600">{result.items_missing.join(', ')}</p>
+                    </div>
                   )}
                 </div>
               </div>
             )}
-            
-            {!result && singleStoreResults.length === 0 && !loading && error && (
-                <p className="text-red-600 font-semibold">{error}</p>
-            )}
-            
           </div>
-          
         </div>
       )}
+      <FloatingCart />
     </div>
   );
 }
