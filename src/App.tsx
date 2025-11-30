@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { UiProvider } from '@/contexts/UiContext';
+import { CartProvider } from '@/contexts/CartContext';
 import { Toaster } from '@/components/ui/toaster';
 import { Welcome } from '@/pages/Welcome';
 import { Auth } from '@/pages/Auth';
@@ -11,6 +12,7 @@ import { AddItem } from '@/pages/AddItem';
 import { ExpiringSoon } from '@/pages/ExpiringSoon';
 import { DealSearch } from './pages/DealSearch';
 import { CartFinder } from './pages/CartFinder';
+import { CartPage } from './pages/CartPage';
 import { Households } from '@/components/home/households/households';
 import { Settings } from '@/components/home/settings/Settings';
 import { useGuestStore } from '@/stores/guestStore';
@@ -121,6 +123,13 @@ function AppRoutes() {
           <CartFinder />
         }
       />
+
+      <Route
+        path="cart"
+        element={
+          <CartPage />
+        }
+      />
     </Routes>
   );
 }
@@ -130,12 +139,14 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <UiProvider>
-          <Router>
-            <div className="min-h-screen bg-gradient-background">
-              <AppRoutes />
-              <Toaster />
-            </div>
-          </Router>
+          <CartProvider>
+            <Router>
+              <div className="min-h-screen bg-gradient-background">
+                <AppRoutes />
+                <Toaster />
+              </div>
+            </Router>
+          </CartProvider>
         </UiProvider>
       </AuthProvider>
     </QueryClientProvider>
