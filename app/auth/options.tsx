@@ -1,0 +1,121 @@
+// app/auth/options.tsx
+import React from 'react';
+import {
+  SafeAreaView,
+  View,
+  Text,
+  ImageBackground,
+  StyleSheet,
+} from 'react-native';
+import { useRouter } from 'expo-router';
+import {
+  onboardingStyles as s,
+  PrimaryButton,
+  LinkButton,
+} from '../components/OnboardingUI';
+import { Image } from 'react-native';
+import proxLogoLight from '../../assets/images/prox-logo-light.png';
+
+import authProduce from '../../assets/images/auth-produce.jpg';
+
+export default function AuthOptionsScreen() {
+  const router = useRouter();
+
+  return (
+    <ImageBackground
+      source={authProduce}
+      style={{ flex: 1 }}                       // <– no s.fullScreen here
+      resizeMode="cover"
+      imageStyle={{ transform: [{ scale: 1.2 }] }}
+    >
+      {/* Dark overlay */}
+      <View style={styles.overlay} />
+
+      <SafeAreaView style={{ flex: 1, backgroundColor: 'transparent' }}>
+        <View style={styles.content}>
+          {/* Center title + subtitle */}
+          <View style={styles.hero}>
+              <Image
+                source={proxLogoLight}
+                style={styles.heroLogo}
+                resizeMode="contain"
+              />
+            {/*<Text style={styles.heroTitle}>Prox</Text>*/}
+            <Text style={styles.heroSubtitle}>
+              Find the cheapest groceries near you!
+            </Text>
+          </View>
+
+          {/* Bottom sheet */}
+          <View style={styles.sheet}>
+            <PrimaryButton
+              title="Continue with Apple"
+              onPress={() => router.push('/onboarding/zipcode')}
+            />
+            <PrimaryButton
+              title="Continue with Google"
+              onPress={() => router.push('/onboarding/zipcode')}
+            />
+            <PrimaryButton
+              title="Continue with Phone"
+              onPress={() => router.push('/onboarding/zipcode')}
+            />
+
+            <View style={{ marginTop: 16, alignItems: 'center' }}>
+              <LinkButton
+                title="Use email instead"
+                onPress={() => router.push('/auth/create-account')}
+              />
+            </View>
+          </View>
+        </View>
+      </SafeAreaView>
+    </ImageBackground>
+  );
+}
+
+const styles = StyleSheet.create({
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)', // lighter overlay
+  },
+  content: {
+    flex: 1,
+  },
+  hero: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+    heroLogo: {
+    width: 160,
+    height: 160,
+    marginBottom: 12,
+  },
+  heroTitle: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 8,
+  },
+  heroSubtitle: {
+    fontSize: 16,
+    color: '#FFFFFF',
+    textAlign: 'center',
+  },
+  sheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 32,
+    marginTop: 'auto',
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: -2 },
+    elevation: 8,
+  },
+});

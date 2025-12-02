@@ -1,24 +1,55 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+// app/_layout.tsx
 import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import 'react-native-reanimated';
-
-import { useColorScheme } from '@/hooks/use-color-scheme';
-
-export const unstable_settings = {
-  anchor: '(tabs)',
-};
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
-
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-      </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
+    <Stack initialRouteName="splash">
+      <Stack.Screen
+        name="splash"
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="index"
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="auth/options"
+        options={{ title: 'Sign up or log in' }}
+      />
+      <Stack.Screen
+        name="auth/create-account"
+        options={{ title: 'Create your account' }}
+      />
+      <Stack.Screen
+        name="auth/login"
+        options={{ title: 'Log in' }}
+      />
+      <Stack.Screen
+        name="onboarding/zipcode"
+        options={{ title: 'Your ZIP code' }}
+      />
+      <Stack.Screen
+        name="onboarding/choose-stores"
+        options={{ title: 'Choose your stores' }}
+      />
+      <Stack.Screen
+        name="onboarding/savings-preview"
+        options={{ title: 'Your savings' }}
+      />
+      <Stack.Screen
+        name="dashboard/index"
+        options={{ title: 'My Savings Dashboard' }}
+      />
+
+      {/* Keep existing tabs + modal support from template */}
+      <Stack.Screen
+        name="(tabs)"
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="modal"
+        options={{ presentation: 'modal' }}
+      />
+    </Stack>
   );
 }
