@@ -222,3 +222,12 @@ export const onboardingStyles = StyleSheet.create({
     marginBottom: 8,
   },
 });
+
+// Provide a harmless default export so Expo Router does not treat this file as a route.
+// The file exports several named components (PrimaryButton, LinkButton, etc.) which
+// the app imports by name. Expo Router expects a default React component when a
+// file is located under `app/` and will warn if missing. Returning null is fine
+// because this file is intended for shared UI helpers, not a route screen.
+export default function OnboardingUI(): React.ReactElement | null {
+  return null;
+}

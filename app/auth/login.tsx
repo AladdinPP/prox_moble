@@ -5,6 +5,7 @@ import {
   ScrollView,
   Text,
   TextInput,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
@@ -12,6 +13,7 @@ import {
   PrimaryButton,
   LinkButton,
 } from '../components/OnboardingUI';
+import { supabase } from '../../lib/supabase';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -19,6 +21,24 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
 
   const canLogin = !!email && !!password;
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = async () => {
+    if (!canLogin) return;
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        Alert.alert('Login failed', error.message);
+        return;
+      }
+      router.replace('/dashboard');
+    } catch (e: any) {
+      Alert.alert('Error', String(e.message ?? e));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <SafeAreaView style={s.fullScreen}>
@@ -43,9 +63,9 @@ export default function LoginScreen() {
         />
 
         <PrimaryButton
-          title="Log In"
-          disabled={!canLogin}
-          onPress={() => router.replace('/dashboard')}
+          title={loading ? 'Logging in...' : 'Log In'}
+          disabled={!canLogin || loading}
+          onPress={handleLogin}
         />
       </ScrollView>
     </SafeAreaView>

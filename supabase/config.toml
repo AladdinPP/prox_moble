@@ -1,0 +1,3 @@
+# Supabase configuration
+[functions."complete-waitlist-signup"]
+verify_jwt = false

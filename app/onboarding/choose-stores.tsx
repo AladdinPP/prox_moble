@@ -6,6 +6,7 @@ import {
   View,
   Text,
   TouchableOpacity,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
@@ -14,6 +15,9 @@ import {
   LinkButton,
 } from '../components/OnboardingUI';
 import { Image } from 'react-native';
+import Constants from 'expo-constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase } from '../../lib/supabase';
 import walmartLogo from '../../assets/images/logo-walmart.png';
 import targetLogo from '../../assets/images/logo-target.png';
 import ralphsLogo from '../../assets/images/logo-ralphs.png';
@@ -91,7 +95,60 @@ export default function ChooseStoresScreen() {
               : 'Continue'
           }
           disabled={selectedCount === 0}
-          onPress={() => router.push('/onboarding/savings-preview')}
+          onPress={async () => {
+            // Save preferred stores directly to waitlist table
+            try {
+              const { data: userData } = await supabase.auth.getUser();
+              let email = userData?.user?.email;
+
+              if (!email) {
+                try {
+                  const stored = await AsyncStorage.getItem('signup_email');
+                  if (stored) email = stored;
+                } catch (e) {
+                  console.warn('Failed to read stored signup email', e);
+                }
+              }
+
+              if (email) {
+                // Try to get stored name for insert fallback
+                let storedName: string | null = null;
+                try {
+                  const s = await AsyncStorage.getItem('signup_name');
+                  if (s !== null) storedName = s;
+                } catch (e) {
+                  console.warn('Failed to read stored signup name', e);
+                }
+
+                const derivedName = email.split('@')[0];
+                const nameToUse = (storedName && storedName.length > 0) ? storedName : derivedName;
+
+                // Use upsert so we create the row if it doesn't exist yet
+                const { data, error } = await supabase
+                  .from('waitlist')
+                  .upsert({ email: email.toLowerCase(), preferred_retailers: selected, name: nameToUse }, { onConflict: 'email' })
+                  .select();
+
+                if (error) {
+                  console.warn('Failed to save preferred stores:', error);
+                } else {
+                  console.log('Saved preferred stores to waitlist (rows returned):', Array.isArray(data) ? data.length : data, data);
+                  // Clear persisted signup email and name now that onboarding has progressed
+                  try {
+                    await AsyncStorage.removeItem('signup_email');
+                    await AsyncStorage.removeItem('signup_name');
+                  } catch (e) {
+                    console.warn('Failed to clear stored signup data', e);
+                  }
+                }
+              }
+            } catch (err: any) {
+              console.warn('Error saving preferred stores:', err);
+              // Continue anyway
+            }
+            
+            router.push('/onboarding/savings-preview');
+          }}
         /> 
       </ScrollView>
     </SafeAreaView>

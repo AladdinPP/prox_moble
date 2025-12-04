@@ -6,6 +6,7 @@ import {
   Text,
   TextInput,
   View,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
@@ -13,6 +14,9 @@ import {
   PrimaryButton,
   LinkButton,
 } from '../components/OnboardingUI';
+import { supabase } from '../../lib/supabase';
+import Constants from 'expo-constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function CreateAccountScreen() {
   const router = useRouter();
@@ -26,6 +30,77 @@ export default function CreateAccountScreen() {
   const [referral, setReferral] = useState('');
 
   const canContinue = !!email && !!password;
+  const [loading, setLoading] = useState(false);
+
+  const handleSignUp = async () => {
+    if (!canContinue) return;
+    setLoading(true);
+    try {
+        const { data, error } = await supabase.auth.signUp({ email, password });
+        if (error) {
+          Alert.alert('Sign up failed', error.message);
+          return;
+        }
+
+        // If signUp didn't create an active session, sign in now to obtain an access token
+        const sessionCheck = await supabase.auth.getSession();
+        if (!sessionCheck.data.session) {
+          // attempt password sign in to get session (non-blocking if fails)
+          await supabase.auth.signInWithPassword({ email, password }).catch(() => null);
+        }
+
+      // After client sign-up, save profile metadata directly to waitlist table
+      try {
+        const fullName = `${firstName || ''}${firstName && lastName ? ' ' : ''}${lastName || ''}`.trim();
+        // try to get the newly-created user's id (if session exists)
+        const { data: userData } = await supabase.auth.getUser();
+        const userId = userData?.user?.id ?? null;
+
+        const upsertPayload: any = {
+          email: email.toLowerCase(),
+          name: fullName,
+          first_name: firstName,
+          last_name: lastName,
+          phone_number: phone,
+          date_of_birth: birthday,
+        };
+        if (userId) upsertPayload.user_id = userId;
+
+        const { error: updateError } = await supabase
+          .from('waitlist')
+          .upsert(upsertPayload, { onConflict: 'email' });
+
+        if (updateError) {
+          console.warn('Failed to update waitlist:', updateError);
+          // Don't block the user if metadata save fails
+        }
+      } catch (e: any) {
+        console.warn('Failed to save profile metadata:', e);
+        // Continue anyway—auth succeeded
+      }
+
+      // Persist the signup email so later onboarding steps can update the waitlist
+      try {
+        await AsyncStorage.setItem('signup_email', email.toLowerCase());
+        // Persist the display name as well so later upserts can supply a non-null name
+        try {
+          const fullName = `${firstName || ''}${firstName && lastName ? ' ' : ''}${lastName || ''}`.trim();
+          await AsyncStorage.setItem('signup_name', fullName || '');
+        } catch (e) {
+          console.warn('Failed to persist signup name locally', e);
+        }
+      } catch (e) {
+        console.warn('Failed to persist signup email locally', e);
+      }
+
+      // Successful sign up -- continue onboarding
+      router.push('/onboarding/zipcode');
+    } catch (e: any) {
+      Alert.alert('Error', String(e.message ?? e));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleBirthdayChange = (text: string) => {
   // Remove all non-digits
@@ -113,9 +188,9 @@ export default function CreateAccountScreen() {
         )}
 
         <PrimaryButton
-          title="Continue"
-          disabled={!canContinue}
-          onPress={() => router.push('/onboarding/zipcode')}
+          title={loading ? 'Working...' : 'Continue'}
+          disabled={!canContinue || loading}
+          onPress={handleSignUp}
         />
 
         <Text style={s.legalText}>

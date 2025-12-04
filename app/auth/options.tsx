@@ -6,6 +6,7 @@ import {
   Text,
   ImageBackground,
   StyleSheet,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
@@ -50,15 +51,15 @@ export default function AuthOptionsScreen() {
           <View style={styles.sheet}>
             <PrimaryButton
               title="Continue with Apple"
-              onPress={() => router.push('/onboarding/zipcode')}
+              onPress={() => Alert.alert('Not available', 'Apple sign-in is not enabled yet. Please use Email.')}
             />
             <PrimaryButton
               title="Continue with Google"
-              onPress={() => router.push('/onboarding/zipcode')}
+              onPress={() => Alert.alert('Not available', 'Google sign-in is not enabled yet. Please use Email.')}
             />
             <PrimaryButton
               title="Continue with Email"
-              onPress={() => router.push('/onboarding/zipcode')}
+              onPress={() => router.push('/auth/create-account')}
             />
 
             {/*<View style={{ marginTop: 16, alignItems: 'center' }}>
