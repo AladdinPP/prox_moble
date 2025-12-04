@@ -42,7 +42,7 @@ export default function AuthOptionsScreen() {
               />
             {/*<Text style={styles.heroTitle}>Prox</Text>*/}
             <Text style={styles.heroSubtitle}>
-              Find the cheapest groceries near you!
+              Find the cheapest groceries near you and save up to $2,500 per year!
             </Text>
           </View>
 
@@ -57,16 +57,23 @@ export default function AuthOptionsScreen() {
               onPress={() => router.push('/onboarding/zipcode')}
             />
             <PrimaryButton
-              title="Continue with Phone"
+              title="Continue with Email"
               onPress={() => router.push('/onboarding/zipcode')}
             />
 
-            <View style={{ marginTop: 16, alignItems: 'center' }}>
+            {/*<View style={{ marginTop: 16, alignItems: 'center' }}>
               <LinkButton
                 title="Use email instead"
                 onPress={() => router.push('/auth/create-account')}
               />
-            </View>
+            </View>*/}
+                    <View style={{ flexDirection: 'row', marginTop: 12 }}>
+                      <Text style={s.bodyText}>Already have an account? </Text>
+                      <LinkButton
+                        title="Log In"
+                        onPress={() => router.push('/auth/login')}
+                      />
+                    </View>
           </View>
         </View>
       </SafeAreaView>
@@ -100,22 +107,26 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   heroSubtitle: {
-    fontSize: 16,
+    fontSize: 24,
     color: '#FFFFFF',
     textAlign: 'center',
   },
   sheet: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: 24,
-    paddingTop: 24,
-    paddingBottom: 32,
-    marginTop: 'auto',
-    shadowColor: '#000',
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: -2 },
-    elevation: 8,
+  backgroundColor: '#FFFFFF',
+  borderTopLeftRadius: 24,
+  borderTopRightRadius: 24,
+  borderBottomLeftRadius: 24,   // NEW
+  borderBottomRightRadius: 24,  // NEW
+  paddingHorizontal: 24,
+  paddingTop: 24,
+  paddingBottom: 32,
+  marginTop: 'auto',
+  marginBottom: 24,             // NEW: lifts card off bottom so you see the curve
+  marginHorizontal: 16,         // OPTIONAL: gives side breathing room
+  shadowColor: '#000',
+  shadowOpacity: 0.12,
+  shadowRadius: 16,
+  shadowOffset: { width: 0, height: -2 },
+  elevation: 8,
   },
 });
