@@ -1,0 +1,7 @@
+project_id = "wpelfofnestzbtziaggk"
+
+[functions.estimate-dates]
+verify_jwt = false
+
+[functions.scan-receipt]
+verify_jwt = false
