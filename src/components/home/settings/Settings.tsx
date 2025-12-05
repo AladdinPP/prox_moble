@@ -82,7 +82,7 @@ export function Settings({ onBack }: SettingsProps) {
               </Button>
               <div className="w-10 h-10 rounded-prox overflow-hidden">
                 <img
-                  src="/Icon-01.jpg"
+                  src="/Icon-01.png"
                   alt="Prox Logo"
                   className="w-20 h-20 object-cover object-center transform translate-x-[5%] translate-y-[-25%]"
                 />

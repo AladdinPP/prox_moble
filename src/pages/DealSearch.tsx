@@ -650,7 +650,7 @@ export function DealSearch() {
                 size="sm"
                 variant="outline"
                 onClick={() => navigate("/cart-finder")}
-                className="w-full rounded-full py-2.5 text-sm font-semibold bg-green-600 text-white hover:bg-green-700 shadow-sm sm:w-auto"
+                className="w-full rounded-full py-2.5 text-sm font-semibold bg-prox text-white hover:bg-prox-hover shadow-sm sm:w-auto"
               >
                 Cart Optimizer →
               </Button>
@@ -658,7 +658,7 @@ export function DealSearch() {
                 size="sm" 
                 variant="outline"
                 onClick={() => navigate('/cart')}
-                className="w-full rounded-full py-2.5 text-sm font-semibold bg-green-600 text-white hover:bg-green-700 shadow-sm sm:w-auto"
+                className="w-full rounded-full py-2.5 text-sm font-semibold bg-prox text-white hover:bg-prox-hover shadow-sm sm:w-auto"
               >
                 <ShoppingBag className="h-4 w-4" />
                 Cart Result ({items.length})
@@ -728,7 +728,7 @@ export function DealSearch() {
               <Button
                 type="submit"
                 disabled={loading}
-                className="w-full rounded-full py-2.5 text-sm font-semibold bg-green-600 text-white hover:bg-green-700 shadow-sm sm:w-auto"
+                className="w-full rounded-full py-2.5 text-sm font-semibold bg-prox text-white hover:bg-prox-hover shadow-sm sm:w-auto"
               >
                 {loading ? "Searching..." : "Search deals"}
               </Button>
@@ -846,7 +846,7 @@ export function DealSearch() {
                   <div className="absolute bottom-3 right-3">
                     <Button 
                       size="icon" 
-                      className={`h-8 w-8 rounded-full shadow-md transition-all ${isAdded ? "bg-green-600 text-white hover:bg-green-700" : "bg-white text-green-600 border border-green-200 hover:bg-green-50"}`}
+                      className={`h-8 w-8 rounded-full shadow-md transition-all ${isAdded ? "bg-prox text-white hover:bg-prox-hover" : "bg-white text-green-600 border border-green-200 hover:bg-green-50"}`}
                       onClick={(e) => handleAdd(e, deal)}
                     >
                       {isAdded ? <Check className="h-4 w-4" /> : <Plus className="h-4 w-4" />}

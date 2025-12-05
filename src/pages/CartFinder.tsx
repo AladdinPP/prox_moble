@@ -892,7 +892,7 @@ export function CartFinder() {
         <div className="flex gap-2">
           <Button 
             size="sm" 
-            className="bg-green-600 text-white hover:bg-green-700" 
+            className="bg-prox text-white hover:bg-prox-hover" 
             onClick={() => navigate('/deal-search')}
           >
             <Search className="h-4 w-4 mr-2" /> Single Deal Search
@@ -901,7 +901,7 @@ export function CartFinder() {
             variant="outline" 
             size="sm" 
             onClick={() => navigate('/cart')}
-            className="bg-green-600 text-white hover:bg-green-700"
+            className="bg-prox text-white hover:bg-prox-hover"
           >
             <ShoppingBag className="h-4 w-4" /> Cart ({items.length})
           </Button>
@@ -929,7 +929,7 @@ export function CartFinder() {
              </Select>
            </div>
         </div>
-        <Button type="submit" disabled={loading} className="w-full text-lg p-6 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl shadow-sm">
+        <Button type="submit" disabled={loading} className="w-full text-lg p-6 bg-prox hover:bg-prox-hover text-white font-bold rounded-xl shadow-sm">
           {loading ? 'Loading...' : 'Load Item List & Search'}
         </Button>
       </form>
@@ -952,7 +952,7 @@ export function CartFinder() {
                </div>
              ))}
           </div>
-          <Button onClick={handleReRunSearch} disabled={loading} className="w-full text-lg p-6 mt-4 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl shadow-sm">
+          <Button onClick={handleReRunSearch} disabled={loading} className="w-full text-lg p-6 mt-4 bg-prox hover:bg-prox-hover text-white font-bold rounded-xl shadow-sm">
             {loading ? ' optimizing...' : 'Re-run Search'}
           </Button>
 
@@ -996,7 +996,7 @@ export function CartFinder() {
                        <p className="text-2xl font-bold text-green-700">${result.total_cart_price.toFixed(2)}</p>
                        <p className="text-sm text-gray-600 mt-1">Using {result.stores.length} stores</p>
                      </div>
-                     <Button onClick={handleSaveCart} size="sm" className="bg-green-600 text-white hover:bg-green-700">
+                     <Button onClick={handleSaveCart} size="sm" className="bg-prox text-white hover:bg-prox-hover">
                        Save Cart
                      </Button>
                   </div>

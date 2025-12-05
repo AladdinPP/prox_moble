@@ -76,7 +76,7 @@ export function Households() {
               </Button>
               <div className={`rounded-prox overflow-hidden ${isMobile ? 'w-8 h-8' : 'w-10 h-10'}`}>
                 <img
-                  src="/Icon-01.jpg"
+                  src="/Icon-01.png"
                   alt="Prox Logo"
                   className={`object-cover object-center transform translate-x-[5%] translate-y-[-25%] ${isMobile ? 'w-16 h-16' : 'w-20 h-20'}`}
                 />

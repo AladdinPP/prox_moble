@@ -173,10 +173,10 @@ export function CartPage() {
           </div>
           
           <div className="flex gap-2 w-full md:w-auto">
-            <Button variant="outline" size="sm" className="bg-green-600 text-white hover:bg-green-700" onClick={() => navigate('/deal-search')}>
+            <Button variant="outline" size="sm" className="bg-prox text-white hover:bg-prox-hover" onClick={() => navigate('/deal-search')}>
               <Search className="h-4 w-4 mr-2" /> Single Deal Search
             </Button>
-            <Button variant="outline" size="sm" className="bg-green-600 text-white hover:bg-green-700" onClick={() => navigate('/cart-finder')}>
+            <Button variant="outline" size="sm" className="bg-prox text-white hover:bg-prox-hover" onClick={() => navigate('/cart-finder')}>
               <ShoppingBag className="h-4 w-4 mr-2" /> Cart Optimizer →
             </Button>
           </div>
@@ -199,7 +199,7 @@ export function CartPage() {
             {items.length === 0 ? (
               <div className="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center bg-white/50">
                 <p className="text-gray-500 text-sm mb-4">Your manual cart is empty.</p>
-                <Button className="bg-green-600 hover:bg-green-700 text-white" onClick={() => navigate('/deal-search')}>
+                <Button className="bg-prox hover:bg-prox-hover text-white" onClick={() => navigate('/deal-search')}>
                   Browse Deals
                 </Button>
               </div>
@@ -255,7 +255,7 @@ export function CartPage() {
             {savedCarts.length === 0 ? (
               <div className="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center bg-white/50">
                 <p className="text-gray-500 text-sm mb-4">No optimized carts saved yet.</p>
-                <Button variant="outline" className="bg-green-600 hover:bg-green-700 text-white" onClick={() => navigate('/cart-finder')}>
+                <Button variant="outline" className="bg-prox hover:bg-prox-hover text-white" onClick={() => navigate('/cart-finder')}>
                   Create Optimized Cart
                 </Button>
               </div>
