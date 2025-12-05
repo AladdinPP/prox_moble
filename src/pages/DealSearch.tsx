@@ -631,9 +631,18 @@ export function DealSearch() {
               </div>
 
               <div className="flex items-center gap-2">
-                <Button variant="ghost" size="icon" className="-ml-2 h-8 w-8" onClick={() => navigate('/cart-finder')}>
-                  <Home className="h-5 w-5 text-muted-foreground" />
-                </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="-ml-2 h-8 w-8" 
+                                onClick={() => navigate('/cart-finder')}
+                              >
+                                <img 
+                                  src="/Icon-01.png" 
+                                  alt="Prox Logo" 
+                                  className="h-5 w-5 object-contain opacity-80"
+                                />
+                              </Button>
                 <h1 className="text-2xl font-semibold tracking-tight">
                   Grocery deal finder
                 </h1>

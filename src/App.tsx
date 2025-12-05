@@ -113,7 +113,7 @@ function AppRoutes() {
         }
       />
       <Route
-        path="/home/households"
+        path="/pantry-tracker/households"
         element={
           <ProtectedRoute>
             <Households />
@@ -129,7 +129,7 @@ function AppRoutes() {
         }
       />
       <Route
-        path="/home/settings"
+        path="/pantry-tracker/settings"
         element={
           <ProtectedRoute>
             <Settings />
@@ -137,7 +137,7 @@ function AppRoutes() {
         }
       />
       <Route path="/deal-search" element={<DealSearch />} />
-      <Route path="/cart-finder" element={<CartFinder />} />
+      <Route path="/cart-finder" element={<CartFinder />} /> {/* Eventually comment this out once routing complete*/}
       <Route path="/cart" element={<CartPage />} />
     </Routes>
   );

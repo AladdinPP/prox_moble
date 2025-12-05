@@ -163,9 +163,18 @@ export function CartPage() {
         {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 border-b border-border/60 pb-6">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={() => navigate('/cart-finder')}>
-              <Home className="h-5 w-5 text-muted-foreground" />
-            </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="-ml-2 h-8 w-8" 
+                            onClick={() => navigate('/cart-finder')}
+                          >
+                            <img 
+                              src="/Icon-01.png" 
+                              alt="Prox Logo" 
+                              className="h-5 w-5 object-contain opacity-80"
+                            />
+                          </Button>
             <div>
               <h1 className="text-2xl font-bold tracking-tight">My Shopping Carts</h1>
               <p className="text-sm text-muted-foreground">Manage your saved deals and optimized baskets.</p>
