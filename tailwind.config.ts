@@ -35,7 +35,7 @@ export default {
 				},
 				prox: {
 					DEFAULT: "#0b311fff",
-					hover: "#082517e6" // 90% opacity for hover
+					hover: "#0b311fE6" // 90% opacity for hover
 				},
 				secondary: {
 					DEFAULT: 'hsl(var(--secondary))',
