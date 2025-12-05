@@ -163,7 +163,7 @@ export function CartPage() {
         {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 border-b border-border/60 pb-6">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={() => navigate('/')}>
+            <Button variant="ghost" size="icon" onClick={() => navigate('/cart-finder')}>
               <Home className="h-5 w-5 text-muted-foreground" />
             </Button>
             <div>

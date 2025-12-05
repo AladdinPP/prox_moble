@@ -880,59 +880,168 @@ export function CartFinder() {
     <div className="container mx-auto p-4 max-w-2xl">
       
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" onClick={() => navigate('/')}>
-            <Home className="h-5 w-5" />
-          </Button>
-          <h1 className="text-2xl font-bold">Cart Optimizer</h1>
-        </div>
-        
-        {/* ⬇️ NEW: Updated buttons with Green Style for Single Deal */}
-        <div className="flex gap-2">
-          <Button 
-            size="sm" 
-            className="bg-prox text-white hover:bg-prox-hover" 
-            onClick={() => navigate('/deal-search')}
-          >
-            <Search className="h-4 w-4 mr-2" /> Single Deal Search
-          </Button>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={() => navigate('/cart')}
-            className="bg-prox text-white hover:bg-prox-hover"
-          >
-            <ShoppingBag className="h-4 w-4" /> Cart ({items.length})
-          </Button>
+      {/* --- HERO CARD FOR CART OPTIMIZER --- */}
+      <div className="rounded-3xl border border-border/60 bg-card shadow-soft px-5 py-4 mb-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          
+          {/* LEFT SIDE */}
+          <div className="space-y-2">
+
+            {/* Home + Title */}
+            <div className="flex items-center gap-2">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="-ml-2 h-8 w-8" 
+                onClick={() => navigate('/cart-finder')}
+              >
+                <Home className="h-5 w-5 text-muted-foreground" />
+              </Button>
+
+              <h1 className="text-2xl font-semibold tracking-tight">
+                Cart Optimizer
+              </h1>
+            </div>
+
+            {/* Subtitle */}
+            <p className="text-sm text-muted-foreground">
+              Find the cheapest combination of stores for your whole cart.
+            </p>
+          </div>
+
+          {/* RIGHT SIDE BUTTONS */}
+          <div className="mt-2 sm:mt-0 flex flex-wrap gap-2">
+            <Button 
+              size="sm"
+              className="w-full rounded-full py-2.5 text-sm font-semibold bg-prox text-white hover:bg-prox-hover shadow-sm sm:w-auto" 
+              onClick={() => navigate('/deal-search')}
+            >
+              <Search className="h-4 w-4 mr-2" /> Single Deal Search
+            </Button>
+
+            <Button 
+              size="sm"
+              variant="outline"
+              className="w-full rounded-full py-2.5 text-sm font-semibold bg-prox text-white hover:bg-prox-hover shadow-sm sm:w-auto" 
+              onClick={() => navigate('/cart')}
+            >
+              <ShoppingBag className="h-4 w-4" /> Cart ({items.length})
+            </Button>
+          </div>
+
         </div>
       </div>
 
-      <p className="mb-4 text-gray-600 text-sm">Find the cheapest combination of stores for your whole cart.</p>
+{/* --- CART OPTIMIZER SEARCH + FILTERS CARD --- */}
+<div className="rounded-2xl border border-border/60 bg-card shadow-soft px-4 py-5 space-y-5">
+  <form onSubmit={handleInitialSearch} className="space-y-4">
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]">
+      
+      {/* 1. Enter Items */}
+      <div className="flex flex-col gap-1.5 md:col-span-3">
+        <Label
+          htmlFor="items"
+          className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground"
+        >
+          1. Enter items
+        </Label>
+        <Input
+          id="items"
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="e.g., milk; chicken"
+          className="text-sm"
+          required
+        />
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          Separate items with a semicolon <span className="font-mono">;</span>.
+        </p>
+      </div>
 
-      <form onSubmit={handleInitialSearch} className="flex flex-col gap-4 mb-4">
-        <div className="flex-grow">
-          <Label htmlFor="items">1. Enter Items</Label>
-          <input id="items" type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="e.g., milk; chicken" className="border p-2 rounded-md w-full mt-1" required />
-          <p className="text-xs text-gray-500 mt-1">Separate with semicolon (;). Prices reflect most recent weekly update.</p>
-        </div>
-        <div className="grid grid-cols-3 gap-2">
-           <div><Label>Zip</Label><input type="text" maxLength={5} value={zipcode} onChange={e=>setZipcode(e.target.value)} className="border p-2 rounded-md w-full" required/></div>
-           <div><Label>Radius</Label><input type="number" min="1" value={radius} onChange={e=>setRadius(e.target.value)} className="border p-2 rounded-md w-full" required/></div>
-           <div><Label>Stores</Label>
-             <Select value={retailerCountLimit} onValueChange={setRetailerCountLimit}>
-               <SelectTrigger><SelectValue/></SelectTrigger>
-               <SelectContent>
-                 {[1,2,3,4,5].map(n=><SelectItem key={n} value={n.toString()}>{n} Store{n>1?'s':''}</SelectItem>)}
-               </SelectContent>
-             </Select>
-           </div>
-        </div>
-        <Button type="submit" disabled={loading} className="w-full text-lg p-6 bg-prox hover:bg-prox-hover text-white font-bold rounded-xl shadow-sm">
-          {loading ? 'Loading...' : 'Load Item List & Search'}
-        </Button>
-      </form>
+      {/* Zip */}
+      <div className="flex flex-col gap-1.5">
+        <Label
+          htmlFor="zipcode"
+          className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground"
+        >
+          Zip code
+        </Label>
+        <Input
+          id="zipcode"
+          type="text"
+          maxLength={5}
+          value={zipcode}
+          onChange={(e) => setZipcode(e.target.value)}
+          placeholder="e.g., 90025"
+          className="text-sm"
+          required
+        />
+      </div>
+
+      {/* Radius */}
+      <div className="flex flex-col gap-1.5">
+        <Label
+          htmlFor="radius"
+          className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground"
+        >
+          Radius (miles)
+        </Label>
+        <Input
+          id="radius"
+          type="number"
+          min="1"
+          value={radius}
+          onChange={(e) => setRadius(e.target.value)}
+          placeholder="10"
+          className="text-sm"
+          required
+        />
+      </div>
+
+      {/* Stores */}
+      <div className="flex flex-col gap-1.5">
+        <Label
+          htmlFor="stores"
+          className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground"
+        >
+          Stores
+        </Label>
+        <Select
+          value={retailerCountLimit}
+          onValueChange={setRetailerCountLimit}
+        >
+          <SelectTrigger className="h-9 text-sm" id="stores">
+            <SelectValue placeholder="Select stores" />
+          </SelectTrigger>
+          <SelectContent>
+            {[1, 2, 3, 4, 5].map((n) => (
+              <SelectItem key={n} value={n.toString()}>
+                {n} Store{n > 1 ? "s" : ""}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+
+    {/* Button row */}
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <Button
+        type="submit"
+        disabled={loading}
+        className="w-full rounded-full py-2.5 text-sm font-semibold bg-prox text-white hover:bg-prox-hover shadow-sm sm:w-auto"
+      >
+        {loading ? "Loading..." : "Load Item List & Search"}
+      </Button>
+    </div>
+
+    <p className="text-[10px] text-gray-400 text-right pt-1">
+      Prices reflect the most recent weekly update.
+    </p>
+  </form>
+</div>
+
       
       {error && <div className="text-red-500 bg-red-50 p-3 rounded-md mb-4 text-sm">{error}</div>}
 
