@@ -930,7 +930,7 @@ export function CartFinder() {
               className="w-full rounded-full py-2.5 text-sm font-semibold bg-prox text-white hover:bg-prox-hover shadow-sm sm:w-auto" 
               onClick={() => navigate('/cart')}
             >
-              <ShoppingBag className="h-4 w-4" /> Cart ({items.length})
+              <ShoppingBag className="h-4 w-4" /> Cart Result ({items.length})
             </Button>
           </div>
 
@@ -1052,23 +1052,31 @@ export function CartFinder() {
 
       {initialSearchDone && (
         <div className="mt-6">
-          <h2 className="text-lg font-semibold mb-2">2. Refine Search</h2>
-          <div className="flex flex-col gap-2 mb-4">
-             <div className="grid grid-cols-4 gap-2 text-sm font-semibold text-gray-600">
-                <span>Name</span><span>Brand</span><span>Size</span><span>Details</span>
-             </div>
-             {editableCartItems.map((item, idx) => (
-               <div key={idx} className="grid grid-cols-4 gap-2">
-                 <Input value={item.name} onChange={e=>handleEditCartItem(idx,'name',e.target.value)} className="text-xs px-2 h-8"/>
-                 <Input value={item.brand} onChange={e=>handleEditCartItem(idx,'brand',e.target.value)} className="text-xs px-2 h-8"/>
-                 <Input value={item.size} onChange={e=>handleEditCartItem(idx,'size',e.target.value)} className="text-xs px-2 h-8"/>
-                 <Input value={item.details} onChange={e=>handleEditCartItem(idx,'details',e.target.value)} className="text-xs px-2 h-8"/>
-               </div>
-             ))}
+          <div className="rounded-2xl border border-border/60 bg-card shadow-soft px-4 py-5 space-y-5">
+            <Label
+              className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+              2. Refine Search
+            </Label>
+            <div className="flex flex-col gap-2 mb-4">
+              <div className="grid grid-cols-4 gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                  <span>Name</span><span>Brand</span><span>Size</span><span>Details</span>
+              </div>
+              {editableCartItems.map((item, idx) => (
+                <div key={idx} className="grid grid-cols-4 gap-2">
+                  <Input value={item.name} onChange={e=>handleEditCartItem(idx,'name',e.target.value)} className="text-xs px-2 h-8"/>
+                  <Input value={item.brand} onChange={e=>handleEditCartItem(idx,'brand',e.target.value)} className="text-xs px-2 h-8"/>
+                  <Input value={item.size} onChange={e=>handleEditCartItem(idx,'size',e.target.value)} className="text-xs px-2 h-8"/>
+                  <Input value={item.details} onChange={e=>handleEditCartItem(idx,'details',e.target.value)} className="text-xs px-2 h-8"/>
+                </div>
+              ))}
+            </div>
+            <Button
+              onClick={handleReRunSearch}
+              disabled={loading}
+              className="w-full rounded-full py-2.5 text-sm font-semibold bg-prox text-white hover:bg-prox-hover shadow-sm sm:w-auto">
+              {loading ? ' optimizing...' : 'Re-run Search'}
+            </Button>
           </div>
-          <Button onClick={handleReRunSearch} disabled={loading} className="w-full text-lg p-6 mt-4 bg-prox hover:bg-prox-hover text-white font-bold rounded-xl shadow-sm">
-            {loading ? ' optimizing...' : 'Re-run Search'}
-          </Button>
 
           <div className="mt-8">
             {/* 1-Store Results */}
