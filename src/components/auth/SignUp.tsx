@@ -48,6 +48,28 @@ const GROCERY_STORES = [
 const GENDER_OPTIONS = ['male', 'female', 'non-binary'] as const;
 
 // -----------------------------
+// Helpers
+// -----------------------------
+
+// Auto-format raw input into MM/DD/YYYY as the user types
+const formatBirthdayInput = (value: string): string => {
+  // Keep only digits and cut to max 8 digits (MMDDYYYY)
+  const digits = value.replace(/\D/g, '').slice(0, 8);
+  const len = digits.length;
+
+  if (len <= 2) {
+    // M, MM
+    return digits;
+  } else if (len <= 4) {
+    // MMDD
+    return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  } else {
+    // MMDDYYYY
+    return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+  }
+};
+
+// -----------------------------
 // Validation schema
 // -----------------------------
 
@@ -387,11 +409,21 @@ export function SignUp({ onSuccess, onSwitchToSignIn }: SignUpProps) {
             <Label htmlFor="birthday" className="font-secondary text-black">
               Birthday
             </Label>
-            <Input
-              id="birthday"
-              {...register('birthday')}
-              className="h-12"
-              placeholder="MM/DD/YYYY"
+            <Controller
+              name="birthday"
+              control={control}
+              render={({ field }) => (
+                <Input
+                  id="birthday"
+                  className="h-12"
+                  placeholder="MM/DD/YYYY"
+                  maxLength={10} // MM/DD/YYYY
+                  value={field.value || ''}
+                  onChange={(e) =>
+                    field.onChange(formatBirthdayInput(e.target.value))
+                  }
+                />
+              )}
             />
             {errors.birthday && (
               <p className="text-sm text-destructive">

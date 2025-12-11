@@ -190,6 +190,62 @@ export type Database = {
           }
         ]
       }
+      // ---------- NEW: waitlist ----------
+      waitlist: {
+        Row: {
+          brand_preference: string | null
+          created_at: string | null
+          date_of_birth: string | null
+          device_preference: string | null
+          email: string
+          feedback: string | null
+          first_name: string | null
+          id: string
+          last_name: string | null
+          metadata: Json | null
+          name: string
+          phone_number: string | null
+          preferred_retailers: string[] | null
+          user_id: string | null
+          zip_code: string | null
+        }
+        Insert: {
+          brand_preference?: string | null
+          created_at?: string | null
+          date_of_birth?: string | null
+          device_preference?: string | null
+          email: string
+          feedback?: string | null
+          first_name?: string | null
+          id?: string
+          last_name?: string | null
+          metadata?: Json | null
+          name: string
+          phone_number?: string | null
+          preferred_retailers?: string[] | null
+          user_id?: string | null
+          zip_code?: string | null
+        }
+        Update: {
+          brand_preference?: string | null
+          created_at?: string | null
+          date_of_birth?: string | null
+          device_preference?: string | null
+          email?: string
+          feedback?: string | null
+          first_name?: string | null
+          id?: string
+          last_name?: string | null
+          metadata?: Json | null
+          name?: string
+          phone_number?: string | null
+          preferred_retailers?: string[] | null
+          user_id?: string | null
+          zip_code?: string | null
+        }
+        Relationships: []
+      }
+      // ---------- END waitlist ----------
     }
     Views: {
       [_ in never]: never
