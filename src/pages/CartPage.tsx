@@ -17,33 +17,57 @@ export function CartPage() {
       <div className="flex-1 pb-24">
         <div className="container mx-auto p-4 max-w-4xl">
           {/* Header */}
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 border-b border-border/60 pb-6">
-            <div className="flex items-center gap-3">
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className="-ml-2 h-8 w-8" 
-                onClick={() => navigate('/cart-finder')}
-              >
-                <img 
-                  src="/Icon-01.png" 
-                  alt="Prox Logo" 
-                  className="h-5 w-5 object-contain opacity-80"
-                />
-              </Button>
-              <div>
-                <h1 className="text-2xl font-bold tracking-tight">My Shopping Carts</h1>
-                <p className="text-sm text-muted-foreground">Manage your saved deals and optimized baskets.</p>
+          <div className="rounded-3xl border border-border/60 bg-card shadow-soft px-5 py-4 mb-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              
+              {/* LEFT SIDE */}
+              <div className="space-y-2">
+
+                {/* Logo Button + Title */}
+                <div className="flex items-center gap-2">
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="-ml-2 h-8 w-8" 
+                    onClick={() => navigate('/cart-finder')}
+                  >
+                    <img 
+                      src="/Icon-01.png" 
+                      alt="Prox Logo" 
+                      className="h-5 w-5 object-contain opacity-80"
+                    />
+                  </Button>
+
+                  <h1 className="text-2xl font-semibold tracking-tight">
+                    My Shopping Carts
+                  </h1>
+                </div>
+
+                {/* Subtitle */}
+                <p className="text-sm text-muted-foreground">
+                  Manage your saved deals and optimized baskets.
+                </p>
               </div>
-            </div>
-            
-            <div className="flex gap-2 w-full md:w-auto">
-              <Button variant="outline" size="sm" className="bg-prox text-white hover:bg-prox-hover" onClick={() => navigate('/deal-search')}>
-                <Search className="h-4 w-4 mr-2" /> Single Deal Search
-              </Button>
-              <Button variant="outline" size="sm" className="bg-prox text-white hover:bg-prox-hover" onClick={() => navigate('/cart-finder')}>
-                <ShoppingBag className="h-4 w-4 mr-2" /> Cart Optimizer →
-              </Button>
+
+              {/* RIGHT SIDE BUTTONS */}
+              <div className="mt-2 sm:mt-0 flex flex-wrap gap-2">
+                <Button 
+                  size="sm"
+                  variant="outline"
+                  className="w-full rounded-full py-2.5 text-sm font-semibold bg-prox text-white hover:bg-prox-hover shadow-sm sm:w-auto" 
+                  onClick={() => navigate('/deal-search')}
+                >
+                  <Search className="h-4 w-4 mr-2" /> Single Deal Search
+                </Button>
+
+                <Button 
+                  size="sm"
+                  className="w-full rounded-full py-2.5 text-sm font-semibold bg-prox text-white hover:bg-prox-hover shadow-sm sm:w-auto" 
+                  onClick={() => navigate('/cart-finder')}
+                >
+                  <ShoppingBag className="h-4 w-4 mr-2" /> Cart Optimizer →
+                </Button>
+              </div>
             </div>
           </div>
 
