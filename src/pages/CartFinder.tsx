@@ -340,7 +340,7 @@ export function CartFinder() {
                   className="w-full rounded-full py-2.5 text-sm font-semibold bg-prox text-white hover:bg-prox-hover shadow-sm sm:w-auto" 
                   onClick={() => navigate('/cart')}
                 >
-                  <ShoppingBag className="h-4 w-4 mr-2" /> Cart ({items.length})
+                  <ShoppingBag className="h-4 w-4 mr-2" /> Cart Result ({items.length})
                 </Button>
               </div>
             </div>
