@@ -4,12 +4,18 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { ProxCard, ProxCardHeader, ProxCardTitle, ProxCardContent } from "@/components/ProxCard";
+import {
+  ProxCard,
+  ProxCardHeader,
+  ProxCardTitle,
+  ProxCardContent,
+} from "@/components/ProxCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Eye, EyeOff } from "lucide-react";
+import { BottomNav } from "@/components/BottomNav";
 
 // Reuse the same retailer list as signup (you can import it from a shared file later)
 const GROCERY_STORES = [
@@ -63,8 +69,7 @@ const accountSchema = z
   })
   .refine(
     (data) =>
-      !data.newPassword || // if no new password, ok
-      data.newPassword === data.confirmPassword,
+      !data.newPassword || data.newPassword === data.confirmPassword,
     {
       path: ["confirmPassword"],
       message: "Passwords don't match",
@@ -109,7 +114,6 @@ export function Account() {
 
       setLoading(true);
       try {
-        // Try to find a waitlist row for this user
         const { data: waitlistRow, error: waitlistError } = await supabase
           .from("waitlist")
           .select("*")
@@ -117,7 +121,6 @@ export function Account() {
           .single();
 
         if (waitlistError && waitlistError.code !== "PGRST116") {
-          // 116 = no rows; anything else we log
           console.error("Error fetching waitlist:", waitlistError);
         }
 
@@ -154,7 +157,8 @@ export function Account() {
         toast({
           variant: "destructive",
           title: "Error loading account",
-          description: "We couldn't load your account info. Please try again.",
+          description:
+            "We couldn't load your account info. Please try again.",
         });
       } finally {
         setLoading(false);
@@ -176,7 +180,7 @@ export function Account() {
         {
           user_id: user.id,
           email: data.email,
-          name: fullName || data.email, // ✅ ensure NOT NULL for waitlist.name
+          name: fullName || data.email,
           first_name: data.firstName,
           last_name: data.lastName,
           phone_number: data.phoneNumber,
@@ -188,7 +192,6 @@ export function Account() {
           device_preference: data.devicePreference,
         },
         {
-          // use email as the conflict target (has a unique constraint)
           onConflict: "email",
         }
       );
@@ -217,7 +220,6 @@ export function Account() {
 
       if (profileError) {
         console.error("Error updating profile:", profileError);
-        // don't throw yet; we still want auth updates to run
       }
 
       // 3) Update auth user (email, password, metadata)
@@ -277,230 +279,241 @@ export function Account() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-background flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-8 h-8 border-4 border-accent border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-muted-foreground">Loading account...</p>
+      <div className="min-h-screen flex flex-col bg-gradient-background">
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-8 h-8 border-4 border-accent border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+            <p className="text-muted-foreground">Loading account...</p>
+          </div>
         </div>
+        <BottomNav current="Account" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-background flex items-center justify-center p-4">
-      <ProxCard className="w-full max-w-xl">
-        <ProxCardHeader>
-          <ProxCardTitle className="text-center text-2xl font-primary font-semibold text-black">
-            My Account
-          </ProxCardTitle>
-        </ProxCardHeader>
-        <ProxCardContent>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            {/* Name */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div className="min-h-screen flex flex-col bg-gradient-background">
+      <div className="flex-1 flex items-center justify-center p-4">
+        <ProxCard className="w-full max-w-xl">
+          <ProxCardHeader>
+            <ProxCardTitle className="text-center text-2xl font-primary font-semibold text-black">
+              My Account
+            </ProxCardTitle>
+          </ProxCardHeader>
+          <ProxCardContent>
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+              {/* Name */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="firstName">First Name</Label>
+                  <Input id="firstName" {...register("firstName")} />
+                  {errors.firstName && (
+                    <p className="text-sm text-destructive">
+                      {errors.firstName.message}
+                    </p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="lastName">Last Name</Label>
+                  <Input id="lastName" {...register("lastName")} />
+                  {errors.lastName && (
+                    <p className="text-sm text-destructive">
+                      {errors.lastName.message}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Phone + Email */}
               <div className="space-y-2">
-                <Label htmlFor="firstName">First Name</Label>
-                <Input id="firstName" {...register("firstName")} />
-                {errors.firstName && (
+                <Label htmlFor="phoneNumber">Phone Number</Label>
+                <Input
+                  id="phoneNumber"
+                  {...register("phoneNumber")}
+                  placeholder="(555) 123-4567"
+                />
+                {errors.phoneNumber && (
                   <p className="text-sm text-destructive">
-                    {errors.firstName.message}
+                    {errors.phoneNumber.message}
                   </p>
                 )}
               </div>
+
               <div className="space-y-2">
-                <Label htmlFor="lastName">Last Name</Label>
-                <Input id="lastName" {...register("lastName")} />
-                {errors.lastName && (
+                <Label htmlFor="email">Email</Label>
+                <Input id="email" type="email" {...register("email")} />
+                {errors.email && (
                   <p className="text-sm text-destructive">
-                    {errors.lastName.message}
+                    {errors.email.message}
                   </p>
                 )}
               </div>
-            </div>
 
-            {/* Phone + Email */}
-            <div className="space-y-2">
-              <Label htmlFor="phoneNumber">Phone Number</Label>
-              <Input
-                id="phoneNumber"
-                {...register("phoneNumber")}
-                placeholder="(555) 123-4567"
-              />
-              {errors.phoneNumber && (
-                <p className="text-sm text-destructive">
-                  {errors.phoneNumber.message}
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" {...register("email")} />
-              {errors.email && (
-                <p className="text-sm text-destructive">
-                  {errors.email.message}
-                </p>
-              )}
-            </div>
-
-            {/* Password change */}
-            <div className="space-y-2">
-              <Label htmlFor="newPassword">New Password (optional)</Label>
-              <div className="relative">
-                <Input
-                  id="newPassword"
-                  type={showPassword ? "text" : "password"}
-                  {...register("newPassword")}
-                  className="pr-10"
-                  placeholder="Leave blank to keep current password"
-                />
-                <button
-                  type="button"
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                  onClick={() => setShowPassword((v) => !v)}
-                >
-                  {showPassword ? (
-                    <EyeOff className="h-4 w-4 text-muted-foreground" />
-                  ) : (
-                    <Eye className="h-4 w-4 text-muted-foreground" />
-                  )}
-                </button>
+              {/* Password change */}
+              <div className="space-y-2">
+                <Label htmlFor="newPassword">New Password (optional)</Label>
+                <div className="relative">
+                  <Input
+                    id="newPassword"
+                    type={showPassword ? "text" : "password"}
+                    {...register("newPassword")}
+                    className="pr-10"
+                    placeholder="Leave blank to keep current password"
+                  />
+                  <button
+                    type="button"
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                    onClick={() => setShowPassword((v) => !v)}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <Eye className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </button>
+                </div>
+                {errors.newPassword && (
+                  <p className="text-sm text-destructive">
+                    {errors.newPassword.message}
+                  </p>
+                )}
               </div>
-              {errors.newPassword && (
-                <p className="text-sm text-destructive">
-                  {errors.newPassword.message}
-                </p>
-              )}
-            </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="confirmPassword">Confirm New Password</Label>
-              <div className="relative">
-                <Input
-                  id="confirmPassword"
-                  type={showConfirmPassword ? "text" : "password"}
-                  {...register("confirmPassword")}
-                  className="pr-10"
-                />
-                <button
-                  type="button"
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                  onClick={() => setShowConfirmPassword((v) => !v)}
-                >
-                  {showConfirmPassword ? (
-                    <EyeOff className="h-4 w-4 text-muted-foreground" />
-                  ) : (
-                    <Eye className="h-4 w-4 text-muted-foreground" />
-                  )}
-                </button>
+              <div className="space-y-2">
+                <Label htmlFor="confirmPassword">Confirm New Password</Label>
+                <div className="relative">
+                  <Input
+                    id="confirmPassword"
+                    type={showConfirmPassword ? "text" : "password"}
+                    {...register("confirmPassword")}
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                    onClick={() => setShowConfirmPassword((v) => !v)}
+                  >
+                    {showConfirmPassword ? (
+                      <EyeOff className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <Eye className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </button>
+                </div>
+                {errors.confirmPassword && (
+                  <p className="text-sm text-destructive">
+                    {errors.confirmPassword.message}
+                  </p>
+                )}
               </div>
-              {errors.confirmPassword && (
-                <p className="text-sm text-destructive">
-                  {errors.confirmPassword.message}
-                </p>
-              )}
-            </div>
 
-            {/* Preferred retailers */}
-            <div className="space-y-2">
-              <Label>Preferred Retailers (max 3)</Label>
-              <Controller
-                name="preferredRetailers"
-                control={control}
-                render={({ field }) => (
-                  <>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-48 overflow-y-auto p-2 border border-border rounded-lg">
-                      {GROCERY_STORES.map((store) => (
+              {/* Preferred retailers */}
+              <div className="space-y-2">
+                <Label>Preferred Retailers (max 3)</Label>
+                <Controller
+                  name="preferredRetailers"
+                  control={control}
+                  render={({ field }) => (
+                    <>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-48 overflow-y-auto p-2 border border-border rounded-lg">
+                        {GROCERY_STORES.map((store) => (
+                          <button
+                            key={store}
+                            type="button"
+                            onClick={() =>
+                              toggleRetailer(
+                                field.value || [],
+                                store,
+                                field.onChange
+                              )
+                            }
+                            className={`px-2 py-2 text-xs rounded-lg border transition-all ${
+                              field.value?.includes(store)
+                                ? "bg-accent text-accent-foreground border-accent"
+                                : "bg-card text-card-foreground border-border hover:border-accent"
+                            }`}
+                          >
+                            {store}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Selected: {field.value?.length || 0}/3
+                      </p>
+                    </>
+                  )}
+                />
+                {errors.preferredRetailers && (
+                  <p className="text-sm text-destructive">
+                    {errors.preferredRetailers.message}
+                  </p>
+                )}
+              </div>
+
+              {/* Estimated address */}
+              <div className="space-y-2">
+                <Label htmlFor="estimatedAddress">Estimated Address</Label>
+                <Input
+                  id="estimatedAddress"
+                  {...register("estimatedAddress")}
+                  placeholder="Optional"
+                />
+                {errors.estimatedAddress && (
+                  <p className="text-sm text-destructive">
+                    {errors.estimatedAddress.message}
+                  </p>
+                )}
+              </div>
+
+              {/* Device preference */}
+              <div className="space-y-2">
+                <Label>Device Preference</Label>
+                <Controller
+                  name="devicePreference"
+                  control={control}
+                  render={({ field }) => (
+                    <div className="grid grid-cols-3 gap-2">
+                      {deviceOptions.map((opt) => (
                         <button
-                          key={store}
+                          key={opt}
                           type="button"
-                          onClick={() =>
-                            toggleRetailer(field.value || [], store, field.onChange)
-                          }
-                          className={`px-2 py-2 text-xs rounded-lg border transition-all ${
-                            field.value?.includes(store)
+                          onClick={() => field.onChange(opt)}
+                          className={`p-2 text-sm rounded-lg border transition-all ${
+                            field.value === opt
                               ? "bg-accent text-accent-foreground border-accent"
                               : "bg-card text-card-foreground border-border hover:border-accent"
                           }`}
                         >
-                          {store}
+                          {opt === "web"
+                            ? "Web"
+                            : opt === "mobile"
+                            ? "Mobile"
+                            : "Both"}
                         </button>
                       ))}
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      Selected: {field.value?.length || 0}/3
-                    </p>
-                  </>
+                  )}
+                />
+                {errors.devicePreference && (
+                  <p className="text-sm text-destructive">
+                    {errors.devicePreference.message}
+                  </p>
                 )}
-              />
-              {errors.preferredRetailers && (
-                <p className="text-sm text-destructive">
-                  {errors.preferredRetailers.message}
-                </p>
-              )}
-            </div>
+              </div>
 
-            {/* Estimated address */}
-            <div className="space-y-2">
-              <Label htmlFor="estimatedAddress">Estimated Address</Label>
-              <Input
-                id="estimatedAddress"
-                {...register("estimatedAddress")}
-                placeholder="Optional"
-              />
-              {errors.estimatedAddress && (
-                <p className="text-sm text-destructive">
-                  {errors.estimatedAddress.message}
-                </p>
-              )}
-            </div>
+              <Button
+                type="submit"
+                className="w-full h-12 bg-accent hover:bg-accent/90 text-white font-primary font-medium"
+                disabled={saving}
+              >
+                {saving ? "Saving..." : "Save Changes"}
+              </Button>
+            </form>
+          </ProxCardContent>
+        </ProxCard>
+      </div>
 
-            {/* Device preference */}
-            <div className="space-y-2">
-              <Label>Device Preference</Label>
-              <Controller
-                name="devicePreference"
-                control={control}
-                render={({ field }) => (
-                  <div className="grid grid-cols-3 gap-2">
-                    {deviceOptions.map((opt) => (
-                      <button
-                        key={opt}
-                        type="button"
-                        onClick={() => field.onChange(opt)}
-                        className={`p-2 text-sm rounded-lg border transition-all ${
-                          field.value === opt
-                            ? "bg-accent text-accent-foreground border-accent"
-                            : "bg-card text-card-foreground border-border hover:border-accent"
-                        }`}
-                      >
-                        {opt === "web"
-                          ? "Web"
-                          : opt === "mobile"
-                          ? "Mobile"
-                          : "Both"}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              />
-              {errors.devicePreference && (
-                <p className="text-sm text-destructive">
-                  {errors.devicePreference.message}
-                </p>
-              )}
-            </div>
-
-            <Button
-              type="submit"
-              className="w-full h-12 bg-accent hover:bg-accent/90 text-white font-primary font-medium"
-              disabled={saving}
-            >
-              {saving ? "Saving..." : "Save Changes"}
-            </Button>
-          </form>
-        </ProxCardContent>
-      </ProxCard>
+      <BottomNav current="Account" />
     </div>
   );
 }
