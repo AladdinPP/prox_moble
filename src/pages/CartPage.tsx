@@ -87,7 +87,9 @@ export function CartPage() {
               {items.length === 0 ? (
                 <div className="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center bg-white/50">
                   <p className="text-gray-500 text-sm mb-4">Your manual cart is empty.</p>
-                  <Button className="bg-prox hover:bg-prox-hover text-white" onClick={() => navigate('/deal-search')}>
+                  <Button
+                    className="w-full rounded-full py-2.5 text-sm font-semibold bg-prox text-white hover:bg-prox-hover shadow-sm sm:w-auto"
+                    onClick={() => navigate('/deal-search')}>
                     Browse Deals
                   </Button>
                 </div>
@@ -143,7 +145,10 @@ export function CartPage() {
               {savedCarts.length === 0 ? (
                 <div className="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center bg-white/50">
                   <p className="text-gray-500 text-sm mb-4">No optimized carts saved yet.</p>
-                  <Button variant="outline" className="bg-prox hover:bg-prox-hover text-white" onClick={() => navigate('/cart-finder')}>
+                  <Button
+                    variant="outline"
+                    className="w-full rounded-full py-2.5 text-sm font-semibold bg-prox text-white hover:bg-prox-hover shadow-sm sm:w-auto"
+                    onClick={() => navigate('/cart-finder')}>
                     Create Optimized Cart
                   </Button>
                 </div>
