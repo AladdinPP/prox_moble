@@ -72,7 +72,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ current }) => {
   };
 
   return (
-    <nav className="border-t border-neutral-200 bg-white px-2 pt-2 pb-4 flex justify-between items-center">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-neutral-200 bg-white/95 backdrop-blur-sm px-2 pt-2 pb-2 safe-area-bottom shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] flex justify-between items-center">
       {TABS.map((tab) => {
         const isActive =
           current === tab.key || location.pathname === tab.path;
@@ -82,7 +82,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ current }) => {
             key={tab.key}
             type="button"
             onClick={() => handlePress(tab.key, tab.path)}
-            className="flex-1 flex flex-col items-center justify-center"
+            className="flex-1 flex flex-col items-center justify-center h-[52px]"
           >
             <span className={`text-xl ${isActive ? "opacity-100" : "opacity-60"}`}>
               {tab.emoji}
