@@ -160,7 +160,7 @@ function App() {
         <UiProvider>
           <CartProvider>
             <Router>
-              <div className="min-h-screen bg-gradient-background">
+              <div className="min-h-screen bg-gradient-background safe-area-y">
                 <AppRoutes />
                 <Toaster />
               </div>
