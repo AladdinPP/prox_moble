@@ -14,8 +14,8 @@ export function CartPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-background text-foreground">
-      <div className="flex-1 pb-24">
-        <div className="container mx-auto p-4 max-w-4xl">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden">
+        <div className="container mx-auto p-4 pb-32 max-w-4xl">
           {/* Header */}
           <div className="rounded-3xl border border-border/60 bg-card shadow-soft px-5 py-4 mb-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -116,7 +116,7 @@ export function CartPage() {
                           </div>
                         </div>
                         <div className="flex flex-col items-end gap-1 pl-2">
-                          <span className="font-bold text-sm text-green-600">
+                          <span className="font-bold text-sm text-green-700">
                             {item.price ? `$${item.price.toFixed(2)}` : '-'}
                           </span>
                           <button onClick={() => removeFromCart(item.id)} className="text-gray-400 hover:text-red-500 transition-colors p-1">
@@ -131,7 +131,7 @@ export function CartPage() {
             </div>
 
             {/* --- RIGHT COLUMN: Optimized Carts --- */}
-            <div className="space-y-4">
+            <div className="space-y-4 min-w-0">
               <div className="flex justify-between items-center">
                 <h2 className="text-lg font-semibold flex items-center gap-2">
                   <span className="h-2 w-2 rounded-full bg-purple-500"></span>
@@ -153,14 +153,18 @@ export function CartPage() {
                   </Button>
                 </div>
               ) : (
-                <Accordion type="single" collapsible className="w-full space-y-3">
+                <Accordion type="single" collapsible className="w-full min-w-0 space-y-3">
                   {savedCarts.map((cart, idx) => (
-                    <AccordionItem key={cart.id} value={cart.id} className="border rounded-xl shadow-sm px-0 bg-white overflow-hidden">
-                      <AccordionTrigger className="hover:no-underline py-3 px-4 bg-gray-50/50 data-[state=open]:bg-gray-50 transition-colors">
-                        <div className="flex justify-between items-center w-full pr-2">
-                          <div className="text-left">
-                            <p className="font-semibold text-sm">Cart #{savedCarts.length - idx}</p>
-                            <p className="text-[11px] text-gray-500">
+                    <AccordionItem
+                      key={cart.id}
+                      value={cart.id}
+                      className="w-full min-w-0 border rounded-xl shadow-sm px-0 bg-white overflow-hidden">
+                      <AccordionTrigger
+                        className="hover:no-underline py-3 px-4 bg-gray-50/50 data-[state=open]:bg-gray-50 transition-colors min-w-0 overflow-hidden">
+                        <div className="flex justify-between items-center w-full pr-2 min-w-0">
+                          <div className="text-left min-w-0">
+                            <p className="font-semibold text-sm truncate">Cart #{savedCarts.length - idx}</p>
+                            <p className="text-[11px] text-gray-500 truncate">
                               {new Date(cart.date).toLocaleDateString()} • {cart.store_count} Store{cart.store_count > 1 ? 's' : ''}
                             </p>
                           </div>
@@ -170,7 +174,7 @@ export function CartPage() {
                       <AccordionContent className="px-0 pb-0">
                         <div className="border-t border-gray-100">
                           <div className="px-4 py-2 bg-purple-50/30 border-b border-purple-100">
-                            <p className="text-xs font-medium text-purple-800">
+                            <p className="text-xs font-medium text-purple-800 min-w-0 truncate">
                               STORES: {cart.stores.map((s: string) => s.replace('@', ' ')).join(', ')}
                             </p>
                           </div>
@@ -182,7 +186,7 @@ export function CartPage() {
                                   <span className="truncate block font-medium text-gray-700">{item.product_name}</span>
                                   <span className="text-xs text-gray-400">{item.retailer}</span>
                                 </div>
-                                <span className="font-bold text-green-600 whitespace-nowrap">${item.product_price.toFixed(2)}</span>
+                                <span className="font-bold text-green-700 whitespace-nowrap">${item.product_price.toFixed(2)}</span>
                               </li>
                             ))}
                           </ul>
