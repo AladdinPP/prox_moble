@@ -30,7 +30,7 @@ export function FloatingCart() {
     <div className="fixed bottom-6 right-6 z-50">
       <Sheet open={isOpen} onOpenChange={setIsOpen}>
         <SheetTrigger asChild>
-          <Button size="lg" className="rounded-full h-14 w-14 shadow-xl bg-blue-600 hover:bg-blue-700 relative">
+          <Button size="lg" className="rounded-full h-14 w-14 shadow-xl bg-prox hover:bg-green-700 relative">
             <ShoppingCart className="h-6 w-6 text-white" />
             <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full h-6 w-6 flex items-center justify-center border-2 border-white">
               {itemCount}
