@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Eye, EyeOff } from "lucide-react";
 import { BottomNav } from "@/components/BottomNav";
+import { useNavigate } from "react-router-dom";
 
 // Reuse the same retailer list as signup (you can import it from a shared file later)
 const GROCERY_STORES = [
@@ -67,22 +68,21 @@ const accountSchema = z
       .or(z.literal("")),
     confirmPassword: z.string().optional().or(z.literal("")),
   })
-  .refine(
-    (data) =>
-      !data.newPassword || data.newPassword === data.confirmPassword,
-    {
-      path: ["confirmPassword"],
-      message: "Passwords don't match",
-    }
-  );
+  .refine((data) => !data.newPassword || data.newPassword === data.confirmPassword, {
+    path: ["confirmPassword"],
+    message: "Passwords don't match",
+  });
 
 type AccountForm = z.infer<typeof accountSchema>;
 
 export function Account() {
-  const { user } = useAuth();
+  const navigate = useNavigate();
+  const { user, signOut } = useAuth();
   const { toast } = useToast();
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
@@ -157,8 +157,7 @@ export function Account() {
         toast({
           variant: "destructive",
           title: "Error loading account",
-          description:
-            "We couldn't load your account info. Please try again.",
+          description: "We couldn't load your account info. Please try again.",
         });
       } finally {
         setLoading(false);
@@ -257,11 +256,27 @@ export function Account() {
       toast({
         variant: "destructive",
         title: "Update failed",
-        description:
-          e.message || "We couldn't save your changes. Please try again.",
+        description: e.message || "We couldn't save your changes. Please try again.",
       });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    setSigningOut(true);
+    try {
+      await signOut();
+      navigate("/welcome");
+    } catch (e) {
+      console.error("Sign out error:", e);
+      toast({
+        variant: "destructive",
+        title: "Sign out failed",
+        description: "Please try again.",
+      });
+    } finally {
+      setSigningOut(false);
     }
   };
 
@@ -503,10 +518,21 @@ export function Account() {
 
               <Button
                 type="submit"
-                className="w-full h-12 bg-accent hover:bg-accent/90 text-white font-primary font-medium"
+                className="w-full h-12 bg-prox hover:bg-prox-hover text-white font-secondary"
                 disabled={saving}
               >
                 {saving ? "Saving..." : "Save Changes"}
+              </Button>
+
+              {/* NEW: Sign Out button under Save Changes */}
+              <Button
+                type="button"
+                onClick={handleSignOut}
+                disabled={signingOut}
+                variant="outline"
+                className="w-full h-12 font-primary font-medium hover:bg-prox hover:text-white"
+              >
+                {signingOut ? "Signing out..." : "Sign Out"}
               </Button>
             </form>
           </ProxCardContent>

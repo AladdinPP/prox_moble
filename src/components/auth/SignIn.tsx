@@ -115,7 +115,7 @@ export function SignIn({ onSuccess, onSwitchToSignUp }: SignInProps) {
 
           <Button
             type="submit"
-            className="w-full h-12 bg-accent hover:bg-accent/90 text-white font-primary font-medium"
+            className="w-full h-12 bg-prox hover:bg-prox-hover text-white font-secondary"
             disabled={isLoading}
           >
             {isLoading ? "Signing In..." : "Sign In"}
