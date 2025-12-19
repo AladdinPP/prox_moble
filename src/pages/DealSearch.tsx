@@ -35,10 +35,51 @@ type EditableItem = {
 const ITEMS_PER_PAGE = 10;
 const PLACEHOLDER_IMG = "https://via.placeholder.com/100x100.png?text=No+Image";
 
+// Simple Levenshtein distance for fuzzy matching
+const levenshtein = (a: string, b: string): number => {
+  const m = a.length;
+  const n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, () =>
+    new Array(n + 1).fill(0)
+  );
+
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,     // deletion
+        dp[i][j - 1] + 1,     // insertion
+        dp[i - 1][j - 1] + cost // substitution
+      );
+    }
+  }
+
+  return dp[m][n];
+};
+
+// Fuzzy match a single keyword against the product name
+const fuzzyWordMatch = (productName: string, keyword: string): boolean => {
+  const lowerProduct = productName.toLowerCase();
+  const words = lowerProduct.split(/\s+/);
+
+  return words.some((word) => {
+    const maxLen = Math.max(word.length, keyword.length);
+    const dist = levenshtein(word, keyword);
+    const ratio = dist / maxLen;
+
+    // allow 1 edit for short words like "mlk" vs "milk",
+    // or a small relative distance for longer ones
+    return dist <= 1 || ratio <= 0.34;
+  });
+};
+
 const productMatchesFilter = (productName: string, filterTerm: string): boolean => {
-  const lowerProductName = productName.toLowerCase();
   const keywords = filterTerm.trim().toLowerCase().split(/\s+/);
-  return keywords.every(keyword => lowerProductName.includes(keyword));
+
+  return keywords.every(keyword => fuzzyWordMatch(productName, keyword));
 };
 
 export function DealSearch() {
@@ -100,7 +141,12 @@ export function DealSearch() {
   const executeSearch = async (searchTerms: string[]) => {
     setError(null);
 
-    if (searchTerms.length === 0) {
+    // Clean up search terms to ensure valid array
+    const validSearchTerms = searchTerms
+      .map(t => t.trim())
+      .filter(t => t.length > 0);
+
+    if (validSearchTerms.length === 0) {
       setError('Please enter at least one item name.');
       return;
     }
@@ -124,17 +170,22 @@ export function DealSearch() {
 
     try {
       const minDate = getLatestRefreshDate();
+      const radiusMeters = Math.round(radiusNum * 1609.34);
 
       const { data, error } = await supabase
-        .rpc('find_all_deals_v3', {
+        .rpc('search_deals_fuzzy', {
+          search_terms: validSearchTerms,
           user_zip: zipcode,
-          search_terms: searchTerms,
-          radius_meters: Math.round(radiusNum * 1609.34),
+          max_distance_meters: radiusMeters,
+          radius_meters: radiusMeters,
           min_date: minDate,
           max_rows: 500
         });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase RPC Error:', error);
+        throw error;
+      }
 
       let rawData: DealResult[] = [];
       if (data && data.length > 0) {
