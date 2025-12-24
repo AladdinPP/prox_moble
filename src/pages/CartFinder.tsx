@@ -217,7 +217,7 @@ export function CartFinder() {
     try {
       const minDate = getLatestRefreshDate();
       const { data: rawData, error: rpcError } = await supabase
-        .rpc('get_deal_menu_v8', { 
+        .rpc('get_deal_menu_v9', { 
           user_zip: zipcode, 
           items_to_find: itemsToFind, 
           radius_meters: meters,
