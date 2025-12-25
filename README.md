@@ -20,6 +20,13 @@ If you want to work locally using your own IDE, you can clone this repo and push
 
 The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
 
+Also must add.env file with: 
+VITE_SUPABASE_PROJECT_ID="[id]"
+VITE_SUPABASE_PUBLISHABLE_KEY="[key]"
+VITE_SUPABASE_URL="[url]"
+VITE_GOOGLE_MAPS_API_KEY="[key]"
+
+
 Follow these steps:
 
 ```sh

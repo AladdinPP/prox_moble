@@ -25,6 +25,8 @@ import { OnboardingChooseStores } from '@/pages/OnboardingChooseStores';
 import { OnboardingSavingsPreview } from '@/pages/OnboardingSavingsPreview';
 import { PantryTracker } from '@/pages/pantry-tracker';
 import { Account } from "@/pages/Account";
+import { Deals } from "@/pages/Deals";
+
 
 
 const queryClient = new QueryClient();
@@ -141,6 +143,7 @@ function AppRoutes() {
       <Route path="/deal-search" element={<DealSearch />} />
       <Route path="/cart-finder" element={<CartFinder />} /> {/* Eventually comment this out once routing complete*/}
       <Route path="/cart" element={<CartPage />} />
+      <Route path="/deals" element={<Deals />} />
       <Route
         path="/account"
         element={
