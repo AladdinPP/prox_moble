@@ -44,7 +44,7 @@ type EditableItem = {
   details: string;
 };
 
-const ITEMS_PER_PAGE = 10;
+const ITEMS_PER_PAGE = 12;
 const PLACEHOLDER_IMG =
   "https://via.placeholder.com/100x100.png?text=No+Image";
 

@@ -27,12 +27,12 @@ const TABS: {
     image: "/cart_finder.png",
     path: "/cart-finder",
   },
-  {
-    key: "DealSearch",
-    label: "Deal Finder",
-    image: "/deal.png",
-    path: "/deal-search",
-  },
+  // {
+  //   key: "DealSearch",
+  //   label: "Deal Finder",
+  //   image: "/deal.png",
+  //   path: "/deal-search",
+  // },
   {
     key: "Deals",
     label: "Deals",
