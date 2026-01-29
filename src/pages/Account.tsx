@@ -1,9 +1,6 @@
-import React, { useEffect, useState } from "react";
-import { useForm, Controller } from "react-hook-form";
-import { z } from "zod";
-import { zodResolver } from "@hookform/resolvers/zod";
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
 import {
   ProxCard,
   ProxCardHeader,
@@ -11,257 +8,15 @@ import {
   ProxCardContent,
 } from "@/components/ProxCard";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Eye, EyeOff } from "lucide-react";
 import { BottomNav } from "@/components/BottomNav";
-import { useNavigate } from "react-router-dom";
-
-// Reuse the same retailer list as signup (you can import it from a shared file later)
-const GROCERY_STORES = [
-  "Albertsons",
-  "Aldi",
-  "Amazon Fresh",
-  "Food Lion",
-  "H-E-B",
-  "Kroger",
-  "Meijer",
-  "Northgate",
-  "Publix",
-  "Ralphs",
-  "Safeway",
-  "El Super",
-  "Superior Grocers",
-  "Smart & Final",
-  "Sprouts Market",
-  "Target",
-  "Trader Joe's",
-  "Vallarta",
-  "Vons",
-  "Wegmans",
-  "Walmart",
-  "Whole Foods",
-  "Other",
-] as const;
-
-const deviceOptions = ["web", "mobile", "both"] as const;
-
-const accountSchema = z
-  .object({
-    firstName: z.string().min(1, "First name is required"),
-    lastName: z.string().min(1, "Last name is required"),
-    phoneNumber: z.string().min(10, "Phone number must be at least 10 digits"),
-    email: z.string().email("Please enter a valid email address"),
-    preferredRetailers: z
-      .array(z.string())
-      .min(1, "Please select at least 1 store")
-      .max(3, "You can select up to 3 stores"),
-    estimatedAddress: z.string().optional().or(z.literal("")),
-    devicePreference: z.enum(deviceOptions, {
-      required_error: "Please choose a device preference",
-    }),
-    newPassword: z
-      .string()
-      .min(6, "Password must be at least 6 characters")
-      .optional()
-      .or(z.literal("")),
-    confirmPassword: z.string().optional().or(z.literal("")),
-  })
-  .refine((data) => !data.newPassword || data.newPassword === data.confirmPassword, {
-    path: ["confirmPassword"],
-    message: "Passwords don't match",
-  });
-
-type AccountForm = z.infer<typeof accountSchema>;
+import { ChevronRight, User, Store, Shield, FileText } from "lucide-react";
 
 export function Account() {
   const navigate = useNavigate();
-  const { user, signOut } = useAuth();
+  const { signOut } = useAuth();
   const { toast } = useToast();
-
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-
-  const {
-    control,
-    register,
-    handleSubmit,
-    reset,
-    formState: { errors },
-  } = useForm<AccountForm>({
-    resolver: zodResolver(accountSchema),
-    defaultValues: {
-      firstName: "",
-      lastName: "",
-      phoneNumber: "",
-      email: "",
-      preferredRetailers: [],
-      estimatedAddress: "",
-      devicePreference: "mobile",
-      newPassword: "",
-      confirmPassword: "",
-    },
-  });
-
-  // Fetch waitlist data for current user
-  useEffect(() => {
-    const fetchData = async () => {
-      if (!user) return;
-
-      setLoading(true);
-      try {
-        const { data: waitlistRow, error: waitlistError } = await supabase
-          .from("waitlist")
-          .select("*")
-          .eq("user_id", user.id)
-          .single();
-
-        if (waitlistError && waitlistError.code !== "PGRST116") {
-          console.error("Error fetching waitlist:", waitlistError);
-        }
-
-        const wl = waitlistRow || {};
-
-        const preferredRetailers =
-          (wl.preferred_retailers as string[] | null) ?? [];
-
-        reset({
-          firstName:
-            (wl.first_name as string) ||
-            (user.user_metadata?.first_name as string) ||
-            "",
-          lastName:
-            (wl.last_name as string) ||
-            (user.user_metadata?.last_name as string) ||
-            "",
-          phoneNumber:
-            (wl.phone_number as string) ||
-            (user.user_metadata?.phone_number as string) ||
-            "",
-          email: (wl.email as string) || user.email || "",
-          preferredRetailers,
-          estimatedAddress: (wl.estimated_address as string) || "",
-          devicePreference:
-            ((wl.device_preference as string) as AccountForm["devicePreference"]) ||
-            ((user.user_metadata?.app_preference as string) as AccountForm["devicePreference"]) ||
-            "mobile",
-          newPassword: "",
-          confirmPassword: "",
-        });
-      } catch (e) {
-        console.error("Unexpected error loading account:", e);
-        toast({
-          variant: "destructive",
-          title: "Error loading account",
-          description: "We couldn't load your account info. Please try again.",
-        });
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [user, reset, toast]);
-
-  const onSubmit = async (data: AccountForm) => {
-    if (!user) return;
-
-    setSaving(true);
-    try {
-      const fullName = `${data.firstName} ${data.lastName}`.trim();
-
-      // 1) Update public.waitlist
-      const { error: waitlistError } = await supabase.from("waitlist").upsert(
-        {
-          user_id: user.id,
-          email: data.email,
-          name: fullName || data.email,
-          first_name: data.firstName,
-          last_name: data.lastName,
-          phone_number: data.phoneNumber,
-          preferred_retailers:
-            data.preferredRetailers && data.preferredRetailers.length
-              ? data.preferredRetailers
-              : null,
-          estimated_address: data.estimatedAddress || null,
-          device_preference: data.devicePreference,
-        },
-        {
-          onConflict: "email",
-        }
-      );
-
-      if (waitlistError) {
-        console.error("Error updating waitlist:", waitlistError);
-        throw new Error("Failed to update your waitlist data");
-      }
-
-      // 2) Update public.profiles with overlapping fields
-      const { error: profileError } = await supabase
-        .from("profiles")
-        .update({
-          first_name: data.firstName,
-          last_name: data.lastName,
-          phone_number: data.phoneNumber,
-          email: data.email,
-          preferred_retailers:
-            data.preferredRetailers && data.preferredRetailers.length
-              ? data.preferredRetailers
-              : null,
-          app_preference: data.devicePreference,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", user.id);
-
-      if (profileError) {
-        console.error("Error updating profile:", profileError);
-      }
-
-      // 3) Update auth user (email, password, metadata)
-      const authUpdate: any = {
-        data: {
-          first_name: data.firstName,
-          last_name: data.lastName,
-          phone_number: data.phoneNumber,
-          preferred_retailers: data.preferredRetailers,
-          app_preference: data.devicePreference,
-        },
-      };
-
-      if (data.email !== user.email) {
-        authUpdate.email = data.email;
-      }
-
-      if (data.newPassword) {
-        authUpdate.password = data.newPassword;
-      }
-
-      const { error: authError } = await supabase.auth.updateUser(authUpdate);
-
-      if (authError) {
-        console.error("Error updating auth user:", authError);
-        throw new Error(authError.message || "Failed to update your account");
-      }
-
-      toast({
-        title: "Account updated",
-        description: "Your account details have been saved.",
-      });
-    } catch (e: any) {
-      console.error("Account update error:", e);
-      toast({
-        variant: "destructive",
-        title: "Update failed",
-        description: e.message || "We couldn't save your changes. Please try again.",
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const handleSignOut = async () => {
     setSigningOut(true);
@@ -280,261 +35,106 @@ export function Account() {
     }
   };
 
-  const toggleRetailer = (
-    current: string[],
-    retailer: string,
-    onChange: (v: string[]) => void
-  ) => {
-    if (current.includes(retailer)) {
-      onChange(current.filter((r) => r !== retailer));
-    } else if (current.length < 3) {
-      onChange([...current, retailer]);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex flex-col bg-gradient-background">
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <div className="w-8 h-8 border-4 border-accent border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-            <p className="text-muted-foreground">Loading account...</p>
-          </div>
+  const MenuRow = ({
+    icon: Icon,
+    title,
+    onClick,
+  }: {
+    icon: React.ElementType;
+    title: string;
+    onClick: () => void;
+  }) => (
+    <button
+      onClick={onClick}
+      className="flex items-center justify-between w-full p-4 bg-card border border-border/50 rounded-lg hover:bg-accent/5 transition-colors"
+    >
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-full bg-accent/10 flex items-center justify-center">
+          <Icon className="h-5 w-5 text-accent" />
         </div>
-        <BottomNav current="Account" />
+        <span className="font-secondary text-base text-black">{title}</span>
       </div>
-    );
-  }
+      <ChevronRight className="h-5 w-5 text-muted-foreground" />
+    </button>
+  );
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-background">
-      <div className="flex-1 flex items-center justify-center p-4">
-        <ProxCard className="w-full max-w-xl">
+      <div className="flex-1 p-4 space-y-6 pb-24">
+        <ProxCard className="w-full max-w-xl mx-auto">
           <ProxCardHeader>
             <ProxCardTitle className="text-center text-2xl font-primary font-semibold text-black">
-              My Account
+              Settings
             </ProxCardTitle>
           </ProxCardHeader>
-          <ProxCardContent>
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-              {/* Name */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="firstName">First Name</Label>
-                  <Input id="firstName" {...register("firstName")} />
-                  {errors.firstName && (
-                    <p className="text-sm text-destructive">
-                      {errors.firstName.message}
-                    </p>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="lastName">Last Name</Label>
-                  <Input id="lastName" {...register("lastName")} />
-                  {errors.lastName && (
-                    <p className="text-sm text-destructive">
-                      {errors.lastName.message}
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {/* Phone + Email */}
+          <ProxCardContent className="space-y-6">
+            {/* MY PREFERENCES Section */}
+            <div className="space-y-3">
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                My Preferences
+              </h3>
               <div className="space-y-2">
-                <Label htmlFor="phoneNumber">Phone Number</Label>
-                <Input
-                  id="phoneNumber"
-                  {...register("phoneNumber")}
-                  placeholder="(555) 123-4567"
+                <MenuRow
+                  icon={User}
+                  title="Personal Info"
+                  onClick={() => navigate("/account/personal-info")}
                 />
-                {errors.phoneNumber && (
-                  <p className="text-sm text-destructive">
-                    {errors.phoneNumber.message}
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" {...register("email")} />
-                {errors.email && (
-                  <p className="text-sm text-destructive">
-                    {errors.email.message}
-                  </p>
-                )}
-              </div>
-
-              {/* Password change */}
-              <div className="space-y-2">
-                <Label htmlFor="newPassword">New Password (optional)</Label>
-                <div className="relative">
-                  <Input
-                    id="newPassword"
-                    type={showPassword ? "text" : "password"}
-                    {...register("newPassword")}
-                    className="pr-10"
-                    placeholder="Leave blank to keep current password"
-                  />
-                  <button
-                    type="button"
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                    onClick={() => setShowPassword((v) => !v)}
-                  >
-                    {showPassword ? (
-                      <EyeOff className="h-4 w-4 text-muted-foreground" />
-                    ) : (
-                      <Eye className="h-4 w-4 text-muted-foreground" />
-                    )}
-                  </button>
-                </div>
-                {errors.newPassword && (
-                  <p className="text-sm text-destructive">
-                    {errors.newPassword.message}
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="confirmPassword">Confirm New Password</Label>
-                <div className="relative">
-                  <Input
-                    id="confirmPassword"
-                    type={showConfirmPassword ? "text" : "password"}
-                    {...register("confirmPassword")}
-                    className="pr-10"
-                  />
-                  <button
-                    type="button"
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                    onClick={() => setShowConfirmPassword((v) => !v)}
-                  >
-                    {showConfirmPassword ? (
-                      <EyeOff className="h-4 w-4 text-muted-foreground" />
-                    ) : (
-                      <Eye className="h-4 w-4 text-muted-foreground" />
-                    )}
-                  </button>
-                </div>
-                {errors.confirmPassword && (
-                  <p className="text-sm text-destructive">
-                    {errors.confirmPassword.message}
-                  </p>
-                )}
-              </div>
-
-              {/* Preferred retailers */}
-              <div className="space-y-2">
-                <Label>Preferred Retailers (max 3)</Label>
-                <Controller
-                  name="preferredRetailers"
-                  control={control}
-                  render={({ field }) => (
-                    <>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-48 overflow-y-auto p-2 border border-border rounded-lg">
-                        {GROCERY_STORES.map((store) => (
-                          <button
-                            key={store}
-                            type="button"
-                            onClick={() =>
-                              toggleRetailer(
-                                field.value || [],
-                                store,
-                                field.onChange
-                              )
-                            }
-                            className={`px-2 py-2 text-xs rounded-lg border transition-all ${
-                              field.value?.includes(store)
-                                ? "bg-accent text-accent-foreground border-accent"
-                                : "bg-card text-card-foreground border-border hover:border-accent"
-                            }`}
-                          >
-                            {store}
-                          </button>
-                        ))}
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        Selected: {field.value?.length || 0}/3
-                      </p>
-                    </>
-                  )}
+                <MenuRow
+                  icon={Store}
+                  title="Preferred Retailers"
+                  onClick={() => navigate("/account/preferred-retailers")}
                 />
-                {errors.preferredRetailers && (
-                  <p className="text-sm text-destructive">
-                    {errors.preferredRetailers.message}
-                  </p>
-                )}
               </div>
+            </div>
 
-              {/* Estimated address */}
+            {/* FEEDBACK Section */}
+            <div className="space-y-3">
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Feedback
+              </h3>
+              <div className="bg-accent/5 border border-border/50 rounded-lg p-4 space-y-3">
+                <p className="text-sm text-muted-foreground font-secondary text-center">
+                  We'd love to hear what you think about the app!
+                </p>
+                <Button
+                  type="button"
+                  onClick={() => navigate("/feedback")}
+                  className="w-full h-10 bg-prox hover:bg-prox-hover text-white font-secondary"
+                >
+                  Give Feedback
+                </Button>
+              </div>
+            </div>
+
+            {/* ACCOUNT & PRIVACY Section */}
+            <div className="space-y-3">
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Account & Privacy
+              </h3>
               <div className="space-y-2">
-                <Label htmlFor="estimatedAddress">Estimated Address</Label>
-                <Input
-                  id="estimatedAddress"
-                  {...register("estimatedAddress")}
-                  placeholder="Optional"
+                <MenuRow
+                  icon={Shield}
+                  title="Privacy Policy"
+                  onClick={() => navigate("/account/privacy-policy")}
                 />
-                {errors.estimatedAddress && (
-                  <p className="text-sm text-destructive">
-                    {errors.estimatedAddress.message}
-                  </p>
-                )}
-              </div>
-
-              {/* Device preference */}
-              <div className="space-y-2">
-                <Label>Device Preference</Label>
-                <Controller
-                  name="devicePreference"
-                  control={control}
-                  render={({ field }) => (
-                    <div className="grid grid-cols-3 gap-2">
-                      {deviceOptions.map((opt) => (
-                        <button
-                          key={opt}
-                          type="button"
-                          onClick={() => field.onChange(opt)}
-                          className={`p-2 text-sm rounded-lg border transition-all ${
-                            field.value === opt
-                              ? "bg-accent text-accent-foreground border-accent"
-                              : "bg-card text-card-foreground border-border hover:border-accent"
-                          }`}
-                        >
-                          {opt === "web"
-                            ? "Web"
-                            : opt === "mobile"
-                            ? "Mobile"
-                            : "Both"}
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                <MenuRow
+                  icon={FileText}
+                  title="Terms of Service"
+                  onClick={() => navigate("/account/terms-of-service")}
                 />
-                {errors.devicePreference && (
-                  <p className="text-sm text-destructive">
-                    {errors.devicePreference.message}
-                  </p>
-                )}
               </div>
+            </div>
 
-              <Button
-                type="submit"
-                className="w-full h-12 bg-prox hover:bg-prox-hover text-white font-secondary"
-                disabled={saving}
-              >
-                {saving ? "Saving..." : "Save Changes"}
-              </Button>
-
-              {/* NEW: Sign Out button under Save Changes */}
-              <Button
-                type="button"
-                onClick={handleSignOut}
-                disabled={signingOut}
-                variant="outline"
-                className="w-full h-12 font-primary font-medium hover:bg-prox hover:text-white"
-              >
-                {signingOut ? "Signing out..." : "Sign Out"}
-              </Button>
-            </form>
+            {/* Sign Out Button */}
+            <Button
+              type="button"
+              onClick={handleSignOut}
+              disabled={signingOut}
+              variant="outline"
+              className="w-full h-12 font-primary font-medium text-destructive border-destructive/50 hover:bg-destructive/10 hover:text-destructive"
+            >
+              {signingOut ? "Signing out..." : "Sign Out"}
+            </Button>
           </ProxCardContent>
         </ProxCard>
       </div>

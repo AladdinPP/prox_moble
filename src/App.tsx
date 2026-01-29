@@ -25,7 +25,13 @@ import { OnboardingChooseStores } from '@/pages/OnboardingChooseStores';
 import { OnboardingSavingsPreview } from '@/pages/OnboardingSavingsPreview';
 import { PantryTracker } from '@/pages/pantry-tracker';
 import { Account } from "@/pages/Account";
+import { PersonalInfo } from "@/pages/PersonalInfo";
+import { PreferredRetailers } from "@/pages/PreferredRetailers";
+import { PrivacyPolicy } from "@/pages/PrivacyPolicy";
+import { TermsOfService } from "@/pages/TermsOfService";
 import { Deals } from "@/pages/Deals";
+import { Feedback } from "@/pages/Feedback";
+import { FeedbackThankYou } from "@/pages/FeedbackThankYou";
 
 
 
@@ -149,6 +155,54 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <Account />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/account/personal-info"
+        element={
+          <ProtectedRoute>
+            <PersonalInfo />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/account/preferred-retailers"
+        element={
+          <ProtectedRoute>
+            <PreferredRetailers />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/account/privacy-policy"
+        element={
+          <ProtectedRoute>
+            <PrivacyPolicy />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/account/terms-of-service"
+        element={
+          <ProtectedRoute>
+            <TermsOfService />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/feedback"
+        element={
+          <ProtectedRoute>
+            <Feedback />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/feedback/thank-you"
+        element={
+          <ProtectedRoute>
+            <FeedbackThankYou />
           </ProtectedRoute>
         }
       />
