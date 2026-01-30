@@ -27,6 +27,8 @@ import {
   Search as SearchIcon,
   ShoppingBag,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Plus,
   Check,
   X,
@@ -215,6 +217,8 @@ const FEATURED_CATEGORIES: FeaturedCategory[] = [
       "greek yogurt",
       "shredded mozzarella cheese",
       "cheddar cheese block",
+      "shredded cheese",
+      "cheese slices",
       "heavy whipping cream",
       "half and half",
       // NOTE: keep “sour cream” BUT exclude chip contexts below
@@ -809,6 +813,12 @@ export function CartFinder() {
   >({});
   const [loadingFeatured, setLoadingFeatured] = useState(false);
 
+  // Carousel scroll state for arrow visibility
+  const [carouselScrollStates, setCarouselScrollStates] = useState<
+    Record<string, { showLeft: boolean; showRight: boolean }>
+  >({});
+  const carouselRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
   // Fetch featured deals (only before initial search), similar to Deals.tsx featured mode.
   // Pull from public.flyer_deals for effectiveZip.
   // - Anchor: cheapest match per keyword
@@ -940,6 +950,68 @@ export function CartFinder() {
     fetchFeatured();
   }, [effectiveZip, initialSearchDone]);
 
+  // Helper function to check scroll position and update arrow visibility
+  const checkScrollPosition = (categoryKey: string) => {
+    const container = carouselRefs.current[categoryKey];
+    if (!container) return;
+
+    const { scrollLeft, scrollWidth, clientWidth } = container;
+    const isAtStart = scrollLeft <= 5;
+    const isAtEnd = scrollLeft + clientWidth >= scrollWidth - 5;
+
+    setCarouselScrollStates((prev) => ({
+      ...prev,
+      [categoryKey]: {
+        showLeft: !isAtStart,
+        showRight: !isAtEnd,
+      },
+    }));
+  };
+
+  // Initialize scroll states when featured data loads
+  useEffect(() => {
+    if (!loadingFeatured && Object.keys(featuredByCategory).length > 0) {
+      // Initialize all carousel scroll states
+      const initialStates: Record<string, { showLeft: boolean; showRight: boolean }> = {};
+
+      FEATURED_CATEGORIES.forEach((cat) => {
+        const deals = featuredByCategory[cat.key] || [];
+        if (deals.length > 0) {
+          initialStates[cat.key] = { showLeft: false, showRight: true };
+        }
+      });
+
+      setCarouselScrollStates(initialStates);
+
+      // Check actual scroll positions after render
+      setTimeout(() => {
+        FEATURED_CATEGORIES.forEach((cat) => {
+          if (featuredByCategory[cat.key]?.length > 0) {
+            checkScrollPosition(cat.key);
+          }
+        });
+      }, 100);
+    }
+  }, [loadingFeatured, featuredByCategory]);
+
+  // Handle carousel scroll
+  const handleCarouselScroll = (categoryKey: string, direction: 'left' | 'right') => {
+    const container = carouselRefs.current[categoryKey];
+    if (!container) return;
+
+    const scrollAmount = container.clientWidth * 0.75; // 75% of visible width
+    const targetScroll = direction === 'left'
+      ? container.scrollLeft - scrollAmount
+      : container.scrollLeft + scrollAmount;
+
+    container.scrollTo({
+      left: targetScroll,
+      behavior: 'smooth',
+    });
+
+    // Update arrow visibility after scroll completes
+    setTimeout(() => checkScrollPosition(categoryKey), 300);
+  };
 
   useEffect(() => {
     const resolveZip = async () => {
@@ -2167,50 +2239,131 @@ export function CartFinder() {
                   return (
                     <div
                       key={cat.key}
-                      className="space-y-3 rounded-2xl border border-border/60 bg-card shadow-soft px-4 py-5"
+                      className="space-y-4 rounded-2xl border border-border/50 bg-white shadow-sm px-5 py-6"
                     >
                       <div className="flex items-center justify-between">
-                        <h3 className="text-sm font-semibold">{cat.label}</h3>
-                        <span className="text-xs text-muted-foreground">
+                        <h3 className="text-base font-bold text-foreground">{cat.label}</h3>
+                        <span className="text-xs text-muted-foreground font-medium">
                           {deals.length} picks
                         </span>
                       </div>
 
-                      <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
-                        {deals.map((item, idx) => {
+                      {/* Carousel with arrow controls */}
+                      <div className="relative">
+                        {/* Left Arrow */}
+                        {carouselScrollStates[cat.key]?.showLeft && (
+                          <button
+                            onClick={() => handleCarouselScroll(cat.key, 'left')}
+                            className="absolute left-0 top-1/2 -translate-y-1/2 z-10 h-10 w-10 rounded-full bg-white/95 shadow-lg border border-border/40 flex items-center justify-center hover:bg-white hover:shadow-xl transition-all"
+                            aria-label="Scroll left"
+                          >
+                            <ChevronLeft className="h-5 w-5 text-foreground" />
+                          </button>
+                        )}
+
+                        {/* Right Arrow */}
+                        {carouselScrollStates[cat.key]?.showRight && (
+                          <button
+                            onClick={() => handleCarouselScroll(cat.key, 'right')}
+                            className="absolute right-0 top-1/2 -translate-y-1/2 z-10 h-10 w-10 rounded-full bg-white/95 shadow-lg border border-border/40 flex items-center justify-center hover:bg-white hover:shadow-xl transition-all"
+                            aria-label="Scroll right"
+                          >
+                            <ChevronRight className="h-5 w-5 text-foreground" />
+                          </button>
+                        )}
+
+                        {/* Scrollable carousel */}
+                        <div
+                          ref={(el) => {
+                            carouselRefs.current[cat.key] = el;
+                          }}
+                          onScroll={() => checkScrollPosition(cat.key)}
+                          className="flex gap-4 overflow-x-auto pb-3 -mx-2 px-2 scrollbar-hide"
+                          style={{
+                            scrollbarWidth: 'none',
+                            msOverflowStyle: 'none',
+                          }}
+                        >
+                          {deals.map((item, idx) => {
                           const key = `featured-${cat.key}-${item.product_name}-${item.retailer}-${item.zip_code}-${item.product_price}-${idx}`;
                           const isAdded = addedItems.has(key);
 
                           return (
                             <div
                               key={key}
-                              className="min-w-[170px] max-w-[170px] flex-shrink-0 rounded-xl border border-border/60 bg-background/50 p-3 relative transition-shadow hover:shadow-md"
+                              className="min-w-[200px] max-w-[200px] flex-shrink-0 rounded-xl border border-border/40 bg-white shadow-sm hover:shadow-md transition-all overflow-hidden"
                             >
-                              <img
-                                src={normalizeImageUrl(item.image_link)}
-                                alt={item.product_name}
-                                className="h-24 w-full rounded-md border bg-gray-50 object-cover"
-                                onError={(e) => {
-                                  e.currentTarget.src = PLACEHOLDER_IMG;
-                                }}
-                              />
+                              {/* Image area with floating add button */}
+                              <div className="relative">
+                                <img
+                                  src={normalizeImageUrl(item.image_link)}
+                                  alt={item.product_name}
+                                  className="h-40 w-full object-cover bg-gray-50"
+                                  onError={(e) => {
+                                    e.currentTarget.src = PLACEHOLDER_IMG;
+                                  }}
+                                />
 
-                              <div className="pt-2 pb-8">
-                                <p className="truncate text-sm font-semibold text-foreground">
+                                {/* Floating green + button */}
+                                <div className="absolute top-2 right-2">
+                                  <Button
+                                    size="icon"
+                                    className={`h-10 w-10 rounded-full shadow-lg transition-all ${
+                                      isAdded
+                                        ? "bg-green-600 text-white hover:bg-green-700"
+                                        : "bg-green-600 text-white hover:bg-green-700"
+                                    }`}
+                                    onClick={() => {
+                                      const flashKey = key;
+                                      handleAddDealToCart(item);
+                                      setAddedItems((prev) => new Set(prev).add(flashKey));
+                                      setTimeout(() => {
+                                        setAddedItems((prev) => {
+                                          const next = new Set(prev);
+                                          next.delete(flashKey);
+                                          return next;
+                                        });
+                                      }, 1500);
+                                    }}
+                                  >
+                                    {isAdded ? (
+                                      <Check className="h-5 w-5" />
+                                    ) : (
+                                      <Plus className="h-5 w-5" />
+                                    )}
+                                  </Button>
+                                </div>
+                              </div>
+
+                              {/* Content area */}
+                              <div className="p-3 space-y-1.5">
+                                {/* Product name - max 2 lines */}
+                                <p
+                                  className="text-sm font-medium text-foreground leading-tight"
+                                  style={{
+                                    display: '-webkit-box',
+                                    WebkitLineClamp: 2,
+                                    WebkitBoxOrient: 'vertical',
+                                    overflow: 'hidden',
+                                  }}
+                                >
                                   {item.product_name}
                                 </p>
 
+                                {/* Size */}
                                 {item.product_size && (
                                   <p className="text-xs text-muted-foreground">
                                     Size: {item.product_size}
                                   </p>
                                 )}
 
-                                <p className="mt-1 text-lg font-bold text-green-600">
+                                {/* Price - most prominent */}
+                                <p className="text-xl font-bold text-green-600">
                                   ${Number(item.product_price).toFixed(2)}
                                 </p>
 
-                                <div className="flex items-center gap-2 mt-1">
+                                {/* Retailer */}
+                                <div className="flex items-center gap-2">
                                   {item.retailer_logo_url && (
                                     <img
                                       src={item.retailer_logo_url}
@@ -2223,39 +2376,10 @@ export function CartFinder() {
                                   </p>
                                 </div>
                               </div>
-
-                              <div className="absolute bottom-3 right-3">
-                                <Button
-                                  size="icon"
-                                  className={`h-8 w-8 rounded-full shadow-md transition-all ${
-                                    isAdded
-                                      ? "bg-prox text-white hover:bg-prox-hover"
-                                      : "bg-white text-green-600 border border-green-200 hover:bg-green-50"
-                                  }`}
-                                  onClick={() => {
-                                    // mimic the same “added flash” behavior as search cards
-                                    const flashKey = key;
-                                    handleAddDealToCart(item);
-                                    setAddedItems((prev) => new Set(prev).add(flashKey));
-                                    setTimeout(() => {
-                                      setAddedItems((prev) => {
-                                        const next = new Set(prev);
-                                        next.delete(flashKey);
-                                        return next;
-                                      });
-                                    }, 1500);
-                                  }}
-                                >
-                                  {isAdded ? (
-                                    <Check className="h-4 w-4" />
-                                  ) : (
-                                    <Plus className="h-4 w-4" />
-                                  )}
-                                </Button>
-                              </div>
                             </div>
                           );
                         })}
+                        </div>
                       </div>
                     </div>
                   );
