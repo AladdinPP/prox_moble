@@ -1,37 +1,84 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Filter, Bell, Settings, Trash2, Building2 } from 'lucide-react';
+import { Plus, Search, Filter, Bell, Settings, Trash2, Building2, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { ProxCard, ProxCardHeader, ProxCardTitle, ProxCardContent } from '@/components/ProxCard';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ProxCard, ProxCardContent } from '@/components/ProxCard';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUi } from '@/contexts/UiContext';
 import { useGuestStore } from '@/stores/guestStore';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { format } from 'date-fns';
 import { AddCategory } from '@/components/home/AddCategory';
 import { DeleteCategory } from '@/components/home/DeleteCategory';
-import { DatePicker } from '@/components/ui/date-picker';
-import { QuantityDisplay } from '@/components/QuantityDisplay';
 import { BottomNav } from "@/components/BottomNav";
 
 interface Item {
   id: string;
+  user_id?: string | null;
+  guest_owner_id?: string | null;
+
   name: string;
+  brand?: string | null;
   category: string;
+
   purchased_at: string;
-  estimated_expiration_at?: string;
-  estimated_restock_at?: string;
-  store_name?: string;
-  quantity?: number;
-  unit?: string;
+  estimated_expiration_at?: string | null;
+  estimated_restock_at?: string | null;
+
+  store_name?: string | null;
+  quantity?: number | null;
+  unit?: string | null;
+
+  created_at?: string;
+  updated_at?: string;
+  estimate_source?: string | null;
+
   owner_first_name?: string;
   owner_last_name?: string;
+}
+
+type ExpirationStatus = 'expired' | 'soon' | 'fresh';
+
+function startOfToday(): Date {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function daysUntil(expirationIso: string): number {
+  const today = startOfToday().getTime();
+  const exp = new Date(expirationIso);
+  exp.setHours(0, 0, 0, 0);
+  const diffMs = exp.getTime() - today;
+  return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+}
+
+function getExpirationStatus(item: Item): { status: ExpirationStatus; daysLeft: number | null } {
+  if (!item.estimated_expiration_at) return { status: 'fresh', daysLeft: null };
+  const d = daysUntil(item.estimated_expiration_at);
+  if (d < 0) return { status: 'expired', daysLeft: d };
+  if (d <= 3) return { status: 'soon', daysLeft: d };
+  return { status: 'fresh', daysLeft: d };
+}
+
+function formatUnit(unit?: string | null) {
+  if (!unit) return '';
+  const map: Record<string, string> = {
+    count: 'ct',
+    oz: 'oz',
+    lb: 'lb',
+    g: 'g',
+    kg: 'kg',
+    ml: 'mL',
+    l: 'L',
+    pack: 'pack',
+    gal: 'gal',
+  };
+  return map[unit] ?? unit;
 }
 
 export function PantryTracker() {
@@ -41,30 +88,40 @@ export function PantryTracker() {
   const { items: guestItems, isGuest } = useGuestStore();
   const { toast } = useToast();
   const isMobile = useIsMobile();
+
   const [items, setItems] = useState<Item[]>([]);
   const [householdItems, setHouseholdItems] = useState<Item[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [loading, setLoading] = useState(false);
-  const [editingExpiration, setEditingExpiration] = useState<string | null>(null);
-  const [newExpirationDate, setNewExpirationDate] = useState('');
+
   const [activeTab, setActiveTab] = useState<'my-items' | 'household-items'>('my-items');
-  const [householdMembers, setHouseholdMembers] = useState<{id: string, first_name: string, last_name: string}[]>([]);
+  const [householdMembers, setHouseholdMembers] = useState<{ id: string; first_name: string; last_name: string }[]>([]);
   const [householdLoading, setHouseholdLoading] = useState(false);
+
+  // image cache map: pantry_item_id -> image_link (or null)
+  const [imagesById, setImagesById] = useState<Record<string, string | null>>({});
 
   useEffect(() => {
     if (isGuest) {
-      setItems(guestItems);
-    } else if (user) {
+      setItems(guestItems as any);
+      return;
+    }
+
+    if (user) {
       fetchUserItems();
       fetchHouseholdMembers();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, isGuest, guestItems]);
 
   useEffect(() => {
     if (householdMembers.length > 0) {
       fetchHouseholdItems();
+    } else {
+      setHouseholdItems([]);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [householdMembers]);
 
   const fetchUserItems = async () => {
@@ -73,19 +130,16 @@ export function PantryTracker() {
     setLoading(true);
     try {
       const { data, error } = await supabase
-        .from('items')
-        .select('id, name, category, purchased_at, estimated_expiration_at, estimated_restock_at, store_name, quantity, unit, created_at, updated_at, user_id, guest_owner_id, estimate_source')
+        // @ts-expect-error
+        .from('pantry_tracker')
+        .select('id, name, brand, category, purchased_at, estimated_expiration_at, estimated_restock_at, store_name, quantity, unit, created_at, updated_at, user_id, guest_owner_id, estimate_source')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setItems(data || []);
+      setItems((data || []) as any);
     } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to load items",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Failed to load items", variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -102,50 +156,34 @@ export function PantryTracker() {
         return;
       }
 
-      const householdId = typeof userHousehold === 'string' ? parseInt(userHousehold) : userHousehold;
-      
+      const householdId = typeof userHousehold === 'string' ? parseInt(userHousehold, 10) : userHousehold;
+
       const { data: membersData, error: membersError } = await (supabase as any)
         .rpc('get_household_members', { household_id_param: householdId });
 
       if (membersError) {
-        console.error('Database function error:', membersError);
         if (membersError.code === 'PGRST202') {
-          await fetchHouseholdMembersAlternative(householdId);
+          setHouseholdMembers([{
+            id: user?.id || '',
+            first_name: user?.user_metadata?.first_name || 'Unknown',
+            last_name: user?.user_metadata?.last_name || 'User'
+          }]);
           return;
         }
         throw membersError;
       }
 
-      const members = (membersData as any[])?.map((member: any) => ({
-        id: member.id,
-        first_name: member.first_name || 'Unknown',
-        last_name: member.last_name || 'User'
+      const members = (membersData as any[])?.map((m: any) => ({
+        id: m.id,
+        first_name: m.first_name || 'Unknown',
+        last_name: m.last_name || 'User'
       })) || [];
 
       setHouseholdMembers(members);
     } catch (error) {
-      console.error('Error fetching household members:', error);
-      toast({
-        title: "Error",
-        description: "Failed to load household members",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Failed to load household members", variant: "destructive" });
     } finally {
       setHouseholdLoading(false);
-    }
-  };
-
-  const fetchHouseholdMembersAlternative = async (householdId: number) => {
-    try {
-      const currentUserMember = {
-        id: user?.id || '',
-        first_name: user?.user_metadata?.first_name || 'Unknown',
-        last_name: user?.user_metadata?.last_name || 'User'
-      };
-      setHouseholdMembers([currentUserMember]);
-    } catch (error) {
-      console.error('Error in alternative household members fetch:', error);
-      setHouseholdMembers([]);
     }
   };
 
@@ -154,33 +192,25 @@ export function PantryTracker() {
 
     setHouseholdLoading(true);
     try {
-      const memberIds = householdMembers.map(member => member.id);
-      
+      const memberIds = householdMembers.map(m => m.id);
+
       const { data, error } = await supabase
-        .from('items')
-        .select('id, name, category, purchased_at, estimated_expiration_at, estimated_restock_at, store_name, quantity, unit, created_at, updated_at, user_id, guest_owner_id, estimate_source')
+        // @ts-expect-error
+        .from('pantry_tracker')
+        .select('id, name, brand, category, purchased_at, estimated_expiration_at, estimated_restock_at, store_name, quantity, unit, created_at, updated_at, user_id, guest_owner_id, estimate_source')
         .in('user_id', memberIds)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
 
-      const itemsWithOwners = (data || []).map(item => {
-        const owner = householdMembers.find(member => member.id === item.user_id);
-        return {
-          ...item,
-          owner_first_name: owner?.first_name,
-          owner_last_name: owner?.last_name
-        };
+      const itemsWithOwners = (data || []).map((item: any) => {
+        const owner = householdMembers.find(m => m.id === item.user_id);
+        return { ...item, owner_first_name: owner?.first_name, owner_last_name: owner?.last_name };
       });
 
-      setHouseholdItems(itemsWithOwners);
+      setHouseholdItems(itemsWithOwners as any);
     } catch (error) {
-      console.error('Error fetching household items:', error);
-      toast({
-        title: "Error",
-        description: "Failed to load household items",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Failed to load household items", variant: "destructive" });
     } finally {
       setHouseholdLoading(false);
     }
@@ -194,172 +224,244 @@ export function PantryTracker() {
   const handleDeleteItem = async (itemId: string) => {
     if (isGuest) {
       useGuestStore.getState().deleteItem(itemId);
-    } else {
-      try {
-        const { error } = await supabase
-          .from('items')
-          .delete()
-          .eq('id', itemId);
-
-        if (error) throw error;
-
-        setItems(prevItems => prevItems.filter(item => item.id !== itemId));
-
-        toast({
-          title: "Item deleted",
-          description: "The item has been removed from your pantry.",
-        });
-      } catch (error) {
-        console.error('Error deleting item:', error);
-        toast({
-          title: "Error",
-          description: "Failed to delete the item. Please try again.",
-          variant: "destructive",
-        });
-      }
+      setItems(prev => prev.filter(it => it.id !== itemId));
+      return;
     }
-  };
 
-  const handleStartEditExpiration = (item: Item) => {
-    setEditingExpiration(item.id);
-    setNewExpirationDate(item.estimated_expiration_at || '');
-  };
-
-  const handleCancelEditExpiration = () => {
-    setEditingExpiration(null);
-    setNewExpirationDate('');
-  };
-
-  const handleUpdateExpiration = async (itemId: string) => {
     try {
-      const newDate = newExpirationDate ? new Date(newExpirationDate).toISOString() : null;
+      const { error } = await supabase
+        // @ts-expect-error
+        .from('pantry_tracker')
+        .delete()
+        .eq('id', itemId);
 
-      if (isGuest) {
-        useGuestStore.getState().updateItem(itemId, {
-          estimated_expiration_at: newDate,
-          updated_at: new Date().toISOString()
-        });
+      if (error) throw error;
 
-        setItems(prevItems =>
-          prevItems.map(item =>
-            item.id === itemId
-              ? { ...item, estimated_expiration_at: newDate }
-              : item
-          )
-        );
-      } else {
-        const { error } = await supabase
-          .from('items')
-          .update({
-            estimated_expiration_at: newDate,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', itemId);
+      setItems(prev => prev.filter(it => it.id !== itemId));
 
-        if (error) throw error;
+      // also delete cached image row (optional; FK cascade handles only if pantry item deleted)
+      await supabase
+        // @ts-expect-error
+        .from('pantry_item_images')
+        .delete()
+        .eq('pantry_item_id', itemId);
 
-        setItems(prevItems =>
-          prevItems.map(item =>
-            item.id === itemId
-              ? { ...item, estimated_expiration_at: newDate }
-              : item
-          )
-        );
-      }
-
-      toast({
-        title: "Expiration date updated",
-        description: "The item's expiration date has been updated successfully.",
-      });
-
-      setEditingExpiration(null);
-      setNewExpirationDate('');
+      toast({ title: "Item deleted", description: "The item has been removed from your pantry." });
     } catch (error) {
-      console.error('Error updating expiration date:', error);
-      toast({
-        title: "Error",
-        description: "Failed to update the expiration date. Please try again.",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Failed to delete the item. Please try again.", variant: "destructive" });
     }
   };
 
-  const handleUpdateCategory = async (itemId: string, newCategory: string) => {
-    try {
-      if (isGuest) {
-        useGuestStore.getState().updateItem(itemId, {
-          category: newCategory,
-          updated_at: new Date().toISOString()
-        });
-
-        setItems(prevItems =>
-          prevItems.map(item =>
-            item.id === itemId
-              ? { ...item, category: newCategory }
-              : item
-          )
-        );
-      } else {
-        const { error } = await supabase
-          .from('items')
-          .update({
-            category: newCategory,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', itemId);
-
-        if (error) throw error;
-
-        setItems(prevItems =>
-          prevItems.map(item =>
-            item.id === itemId
-              ? { ...item, category: newCategory }
-              : item
-          )
-        );
-      }
-
-      toast({
-        title: "Category updated",
-        description: `Item moved to ${newCategory} category.`,
-      });
-    } catch (error) {
-      console.error('Error updating category:', error);
-      toast({
-        title: "Error",
-        description: "Failed to update the category. Please try again.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleUpdateQuantity = (itemId: string, quantity: number | null, unit: string | null) => {
-    setItems(prevItems =>
-      prevItems.map(item =>
-        item.id === itemId
-          ? { ...item, quantity, unit }
-          : item
-      )
-    );
+  const canEditItem = (item: Item) => {
+    if (isGuest) return true;
+    if (!user) return false;
+    return item.user_id === user.id;
   };
 
   const currentItems = activeTab === 'my-items' ? items : householdItems;
   const currentLoading = activeTab === 'my-items' ? loading : householdLoading;
 
-  const filteredItems = currentItems.filter(item => {
-    const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory = selectedCategory === 'All' || item.category === selectedCategory;
-    return matchesSearch && matchesCategory;
-  });
+  const filteredItems = useMemo(() => {
+    return currentItems.filter(item => {
+      const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesCategory = selectedCategory === 'All' || item.category === selectedCategory;
+      return matchesSearch && matchesCategory;
+    });
+  }, [currentItems, searchTerm, selectedCategory]);
 
-  const groupedItems = filteredItems.reduce((groups, item) => {
-    const category = item.category;
-    if (!groups[category]) {
-      groups[category] = [];
+  const groupedByStatus = useMemo(() => {
+    const expired: Item[] = [];
+    const soon: Item[] = [];
+    const fresh: Item[] = [];
+
+    for (const item of filteredItems) {
+      const { status } = getExpirationStatus(item);
+      if (status === 'expired') expired.push(item);
+      else if (status === 'soon') soon.push(item);
+      else fresh.push(item);
     }
-    groups[category].push(item);
-    return groups;
-  }, {} as Record<string, Item[]>);
+
+    return { expired, soon, fresh };
+  }, [filteredItems]);
+
+  // 1) Load cached images for currently visible items
+  // 2) Resolve missing images via edge function in one batch
+  useEffect(() => {
+    if (isGuest) return;
+    if (!user) return;
+
+    const visibleIds = filteredItems.map(i => i.id);
+    if (visibleIds.length === 0) return;
+
+    const run = async () => {
+      try {
+        // Fetch cached image rows
+        const { data: cacheRows, error } = await supabase
+          // @ts-expect-error
+          .from('pantry_item_images')
+          .select('pantry_item_id, image_link, status, updated_at')
+          .in('pantry_item_id', visibleIds);
+
+        if (error) throw error;
+
+        const nextMap: Record<string, string | null> = { ...imagesById };
+        (cacheRows || []).forEach((r: any) => {
+          nextMap[r.pantry_item_id] = r.image_link ?? null;
+        });
+        setImagesById(nextMap);
+
+        // Find IDs that are missing from cacheRows OR have no image_link (null)
+        const cachedIds = new Set((cacheRows || []).map((r: any) => r.pantry_item_id));
+        const missingIds = visibleIds.filter((id) => !cachedIds.has(id));
+
+        // Only resolve missing cache rows (not every null) — null could be "not_found" and still valid
+        if (missingIds.length > 0) {
+          const { data: fnData, error: fnErr } = await supabase.functions.invoke('resolve-pantry-images', {
+            body: { itemIds: missingIds },
+          });
+
+          if (fnErr) throw fnErr;
+
+          const results = fnData?.results || {};
+          const merged: Record<string, string | null> = { ...nextMap };
+          Object.keys(results).forEach((id) => {
+            merged[id] = results[id] ?? null;
+          });
+          setImagesById(merged);
+        }
+      } catch (e) {
+        // silent fail; placeholders still show
+        console.warn('Image resolution failed:', e);
+      }
+    };
+
+    run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredItems.map(i => i.id).join('|'), isGuest, user]);
+
+  const renderStatusRow = (item: Item) => {
+    const { status, daysLeft } = getExpirationStatus(item);
+
+    if (!item.estimated_expiration_at) {
+      return (
+        <div className="flex items-center space-x-2">
+          <div className="w-2 h-2 rounded-full bg-emerald-500" />
+          <span className="text-xs font-secondary text-emerald-600">
+            No expiration date set
+          </span>
+        </div>
+      );
+    }
+
+    if (status === 'expired') {
+      return (
+        <div className="flex items-center space-x-2">
+          <div className="w-2 h-2 rounded-full bg-destructive" />
+          <span className="text-xs font-secondary text-destructive">Expired</span>
+        </div>
+      );
+    }
+
+    if (status === 'soon') {
+      return (
+        <div className="flex items-center space-x-2">
+          <div className="w-2 h-2 rounded-full bg-yellow-500" />
+          <span className="text-xs font-secondary text-yellow-600">
+            Expires in {daysLeft} day{daysLeft === 1 ? '' : 's'}
+          </span>
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex items-center space-x-2">
+        <div className="w-2 h-2 rounded-full bg-emerald-500" />
+        <span className="text-xs font-secondary text-emerald-600">
+          Expires in {daysLeft} day{daysLeft === 1 ? '' : 's'}
+        </span>
+      </div>
+    );
+  };
+
+  const renderItemCard = (item: Item) => {
+    const editable = canEditItem(item);
+    const imageUrl = imagesById[item.id] ?? null;
+
+    return (
+      <ProxCard key={item.id} className="hover:shadow-medium transition-all">
+        <ProxCardContent className={`flex items-center gap-4 ${isMobile ? 'p-3' : 'p-4'}`}>
+          {/* Image */}
+          <div className="w-12 h-12 rounded-prox bg-muted overflow-hidden shrink-0 flex items-center justify-center">
+            {imageUrl ? (
+              <img
+                src={imageUrl}
+                alt={item.name}
+                className="w-full h-full object-cover"
+                loading="lazy"
+              />
+            ) : (
+              <div className="w-full h-full bg-gradient-to-br from-muted to-muted/60" />
+            )}
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className={`font-semibold text-foreground font-primary truncate ${isMobile ? 'text-sm' : 'text-base'}`}>
+                {item.name}
+              </h3>
+
+              {activeTab === 'household-items' && item.owner_first_name && (
+                <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
+                  {item.owner_first_name} {item.owner_last_name}
+                </span>
+              )}
+            </div>
+
+            {item.brand && (
+              <div className="text-xs text-muted-foreground font-secondary truncate">
+                {item.brand}
+              </div>
+            )}
+
+            <div className="text-xs text-muted-foreground font-secondary mt-1">
+              {(item.quantity ?? '') !== '' ? item.quantity : ''}{item.quantity != null && item.unit ? ' ' : ''}
+              {item.unit ? formatUnit(item.unit) : ''}
+            </div>
+
+            <div className="mt-2">{renderStatusRow(item)}</div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center gap-1">
+            {editable && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => navigate(`/pantry-tracker/edit/${item.id}`)}
+                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+            )}
+
+            {activeTab === 'my-items' && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => handleDeleteItem(item.id)}
+                className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+        </ProxCardContent>
+      </ProxCard>
+    );
+  };
+
+  const hasAnyItems = filteredItems.length > 0;
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-background">
@@ -385,47 +487,31 @@ export function PantryTracker() {
                   </p>
                 </div>
               </div>
+
               <div className="flex items-center space-x-2">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => navigate('/expiring-soon')}
-                  className={`relative ${isMobile ? 'h-8 w-8' : 'h-10 w-10'}`}
-                >
+                <Button variant="ghost" size="icon" onClick={() => navigate('/expiring-soon')} className={`relative ${isMobile ? 'h-8 w-8' : 'h-10 w-10'}`}>
                   <Bell className={`${isMobile ? 'h-4 w-4' : 'h-5 w-5'}`} />
                 </Button>
+
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className={`relative ${isMobile ? 'h-8 w-8' : 'h-10 w-10'}`}
-                    >
+                    <Button variant="ghost" size="icon" className={`relative ${isMobile ? 'h-8 w-8' : 'h-10 w-10'}`}>
                       <Settings className={`${isMobile ? 'h-4 w-4' : 'h-5 w-5'}`} />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-48">
-                    <DropdownMenuItem 
-                      onClick={() => navigate('/home/settings')}
-                      className="flex items-center space-x-2 cursor-pointer hover:bg-accent/10 focus:bg-accent/10"
-                    >
+                    <DropdownMenuItem onClick={() => navigate('/home/settings')} className="flex items-center space-x-2 cursor-pointer hover:bg-accent/10 focus:bg-accent/10">
                       <Settings className="h-4 w-4 text-accent" />
                       <span className="font-secondary text-sm">Settings</span>
                     </DropdownMenuItem>
-                    <DropdownMenuItem 
-                      onClick={() => navigate('/home/households')}
-                      className="flex items-center space-x-2 cursor-pointer hover:bg-accent/10 focus:bg-accent/10"
-                    >
+                    <DropdownMenuItem onClick={() => navigate('/home/households')} className="flex items-center space-x-2 cursor-pointer hover:bg-accent/10 focus:bg-accent/10">
                       <Building2 className="h-4 w-4 text-accent" />
                       <span className="font-secondary text-sm">Households</span>
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
-                <Button
-                  variant="ghost"
-                  onClick={handleSignOut}
-                  className={`font-secondary ${isMobile ? 'text-xs px-2' : 'text-sm'}`}
-                >
+
+                <Button variant="ghost" onClick={handleSignOut} className={`font-secondary ${isMobile ? 'text-xs px-2' : 'text-sm'}`}>
                   {isGuest ? 'Sign In' : 'Sign Out'}
                 </Button>
               </div>
@@ -442,19 +528,12 @@ export function PantryTracker() {
                   className={`pl-10 font-secondary ${isMobile ? 'h-8 text-sm' : 'h-10'}`}
                 />
               </div>
-              <Button
-                variant="outline"
-                size="icon"
-                className={`${isMobile ? 'h-8 w-8' : 'h-10 w-10'}`}
-              >
+
+              <Button variant="outline" size="icon" className={`${isMobile ? 'h-8 w-8' : 'h-10 w-10'}`}>
                 <Filter className={`${isMobile ? 'h-3 w-3' : 'h-4 w-4'}`} />
               </Button>
 
-              <Button
-                variant="outline"
-                onClick={() => navigate('/deal-search')}
-                className={`font-secondary whitespace-nowrap ${isMobile ? 'h-8 text-xs px-2' : 'h-10'}`}
-              >
+              <Button variant="outline" onClick={() => navigate('/deals')} className={`font-secondary whitespace-nowrap ${isMobile ? 'h-8 text-xs px-2' : 'h-10'}`}>
                 Find Deals
               </Button>
             </div>
@@ -472,11 +551,10 @@ export function PantryTracker() {
                   {category}
                 </Button>
               ))}
-              <AddCategory setCategoriesChangeTracker={setCategoriesChangeTracker} categoriesChangeTracker={categoriesChangeTracker}/>
-              <DeleteCategory setCategoriesChangeTracker={setCategoriesChangeTracker} categoriesChangeTracker={categoriesChangeTracker}/>
+              <AddCategory setCategoriesChangeTracker={setCategoriesChangeTracker} categoriesChangeTracker={categoriesChangeTracker} />
+              <DeleteCategory setCategoriesChangeTracker={setCategoriesChangeTracker} categoriesChangeTracker={categoriesChangeTracker} />
             </div>
 
-            {/* Items Tab */}
             {!isGuest && (
               <div className="mt-4">
                 <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'my-items' | 'household-items')}>
@@ -490,197 +568,66 @@ export function PantryTracker() {
           </div>
         </div>
 
-        {/* Main Content */}
+        {/* Main */}
         <div className={`mx-auto px-4 py-6 ${isMobile ? 'px-3 py-4' : 'max-w-4xl'}`}>
-          {isGuest && (
-            <ProxCard className={`mb-6 bg-gradient-to-r from-accent/10 to-highlight/10 border-accent/20 ${isMobile ? 'mb-4' : ''}`}>
-              <ProxCardContent className={`flex items-center justify-between ${isMobile ? 'p-3 flex-col space-y-3' : 'p-4'}`}>
-                <div className={`${isMobile ? 'text-center' : ''}`}>
-                  <p className={`font-medium text-accent ${isMobile ? 'text-sm' : ''}`}>You're in guest mode</p>
-                  <p className={`text-muted-foreground ${isMobile ? 'text-xs' : 'text-sm'}`}>Create an account to sync across devices</p>
-                </div>
-                <Button
-                  onClick={() => navigate('/auth?mode=signup')}
-                  size="sm"
-                  className={`bg-accent hover:bg-accent/90 ${isMobile ? 'w-full' : ''}`}
-                >
-                  Sign Up
-                </Button>
-              </ProxCardContent>
-            </ProxCard>
-          )}
-
-          {/* Items List */}
           {currentLoading ? (
             <div className="text-center py-8">
               <p className="text-muted-foreground">Loading items...</p>
             </div>
-          ) : activeTab === 'household-items' && householdMembers.length === 0 ? (
-            <ProxCard className="text-center py-12">
-              <ProxCardContent>
-                <div className="w-16 h-16 bg-muted rounded-prox mx-auto mb-4 flex items-center justify-center">
-                  <Building2 className="h-8 w-8 text-muted-foreground" />
-                </div>
-                <h3 className="text-lg font-medium mb-2">Not in a household</h3>
-                <p className="text-muted-foreground mb-4">
-                  You need to join or create a household to view household items
-                </p>
-                <Button
-                  onClick={() => navigate('/home/households')}
-                  className="bg-accent hover:bg-accent/90"
-                >
-                  Manage Household
-                </Button>
-              </ProxCardContent>
-            </ProxCard>
-          ) : Object.keys(groupedItems).length === 0 ? (
+          ) : !hasAnyItems ? (
             <ProxCard className="text-center py-12">
               <ProxCardContent>
                 <div className="w-16 h-16 bg-muted rounded-prox mx-auto mb-4 flex items-center justify-center">
                   <Plus className="h-8 w-8 text-muted-foreground" />
                 </div>
                 <h3 className="text-lg font-medium mb-2">No items yet</h3>
-                <p className="text-muted-foreground mb-4">
-                  Start by adding your first grocery item
-                </p>
-                <Button
-                  onClick={() => navigate('/add-item')}
-                  className="bg-accent hover:bg-accent/90"
-                >
+                <p className="text-muted-foreground mb-4">Start by adding your first grocery item</p>
+                <Button onClick={() => navigate('/add-item')} className="bg-accent hover:bg-accent/90">
                   Add Your First Item
                 </Button>
               </ProxCardContent>
             </ProxCard>
           ) : (
             <div className="space-y-6">
-              {Object.entries(groupedItems).map(([category, categoryItems]) => (
-                <div key={category}>
-                  <h2 className={`font-semibold text-foreground mb-3 sticky top-32 bg-gradient-background/95 backdrop-blur-sm py-2 ${isMobile ? 'text-base' : 'text-lg'}`}>
-                    {category} ({categoryItems.length})
-                  </h2>
-                  <div className={`grid gap-3 ${isMobile ? 'gap-2' : ''}`}>
-                    {categoryItems.map((item) => (
-                      <ProxCard key={item.id} className="hover:shadow-medium transition-all group">
-                        <ProxCardContent className={`flex items-center justify-between ${isMobile ? 'p-3' : 'p-4'}`}>
-                          <div className="flex-1 min-w-0">
-                            <div className={`flex items-center space-x-2 ${isMobile ? 'flex-wrap' : ''}`}>
-                              <h3 className={`font-medium text-foreground ${isMobile ? 'text-sm' : ''}`}>{item.name}</h3>
-                              {activeTab === 'household-items' && item.owner_first_name && (
-                                <span className={`text-muted-foreground bg-muted px-2 py-1 rounded ${isMobile ? 'text-xs' : 'text-xs'}`}>
-                                  {item.owner_first_name} {item.owner_last_name}
-                                </span>
-                              )}
-                            </div>
-                            <div className={`flex items-center mt-1 text-muted-foreground ${isMobile ? 'flex-wrap gap-2 text-xs' : 'space-x-4 text-sm'}`}>
-                              <span>Purchased: {format(new Date(item.purchased_at), 'MMM d')}</span>
-                              {editingExpiration === item.id ? (
-                                <div className="flex items-center space-x-2">
-                                  <span>Expires:</span>
-                                  <DatePicker
-                                    date={newExpirationDate ? new Date(newExpirationDate) : undefined}
-                                    onDateChange={setNewExpirationDate}
-                                    placeholder="Select date"
-                                    className="w-32 h-8"
-                                  />
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => handleUpdateExpiration(item.id)}
-                                    className="h-6 w-6 p-0"
-                                  >
-                                    <Check className="h-3 w-3" />
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={handleCancelEditExpiration}
-                                    className="h-6 w-6 p-0"
-                                  >
-                                    <X className="h-3 w-3" />
-                                  </Button>
-                                </div>
-                              ) : (
-                                <div className="flex items-center space-x-2">
-                                  {item.estimated_expiration_at && (
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => handleStartEditExpiration(item)}
-                                      className="h-auto p-0 text-sm text-muted-foreground hover:text-accent transition-colors"
-                                    >
-                                      Expires: {format(new Date(item.estimated_expiration_at), 'MMM d')}
-                                    </Button>
-                                  )}
-                                  {!item.estimated_expiration_at && (
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => handleStartEditExpiration(item)}
-                                      className="h-auto p-0 text-sm text-muted-foreground hover:text-accent transition-colors"
-                                    >
-                                      Set expiration
-                                    </Button>
-                                  )}
-                                  <Select
-                                    value={item.category}
-                                    onValueChange={(value) => handleUpdateCategory(item.id, value)}
-                                  >
-                                    <SelectTrigger className="w-auto h-6 text-xs border border-muted bg-muted/30 hover:bg-muted/50 px-2 text-muted-foreground hover:text-foreground transition-colors">
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {allCategories.filter(cat => cat !== 'All').map((category) => (
-                                        <SelectItem key={category} value={category} className="text-xs">
-                                          {category}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                              )}
-                            </div>
-                            {item.store_name && (
-                              <p className="text-xs text-muted-foreground mt-1">
-                                From {item.store_name}
-                              </p>
-                            )}
-                            <div className="mt-1">
-                              <QuantityDisplay
-                                itemId={item.id}
-                                quantity={item.quantity}
-                                unit={item.unit}
-                                isGuest={isGuest}
-                                onUpdate={handleUpdateQuantity}
-                              />
-                            </div>
-                          </div>
-                          
-                          <div className="flex items-center space-x-2">
-                            {item.estimated_expiration_at &&
-                             new Date(item.estimated_expiration_at) <= new Date(Date.now() + 3 * 24 * 60 * 60 * 1000) && (
-                              <div className="w-2 h-2 bg-destructive rounded-full"></div>
-                            )}
-                            {activeTab === 'my-items' && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => handleDeleteItem(item.id)}
-                                className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            )}
-                          </div>
-                        </ProxCardContent>
-                      </ProxCard>
-                    ))}
+              {groupedByStatus.expired.length > 0 && (
+                <div>
+                  <div className="mb-3 flex items-center gap-2">
+                    <span className="text-sm font-semibold text-foreground font-primary">Expired</span>
+                    <span className="text-xs text-muted-foreground">({groupedByStatus.expired.length})</span>
+                  </div>
+                  <div className="grid gap-3">
+                    {groupedByStatus.expired.map(renderItemCard)}
                   </div>
                 </div>
-              ))}
+              )}
+
+              {groupedByStatus.soon.length > 0 && (
+                <div>
+                  <div className="mb-3 flex items-center gap-2">
+                    <span className="text-sm font-semibold text-foreground font-primary">Expiring Soon</span>
+                    <span className="text-xs text-muted-foreground">({groupedByStatus.soon.length})</span>
+                  </div>
+                  <div className="grid gap-3">
+                    {groupedByStatus.soon.map(renderItemCard)}
+                  </div>
+                </div>
+              )}
+
+              {groupedByStatus.fresh.length > 0 && (
+                <div>
+                  <div className="mb-3 flex items-center gap-2">
+                    <span className="text-sm font-semibold text-foreground font-primary">Fresh</span>
+                    <span className="text-xs text-muted-foreground">({groupedByStatus.fresh.length})</span>
+                  </div>
+                  <div className="grid gap-3">
+                    {groupedByStatus.fresh.map(renderItemCard)}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
-          {/* Floating Action Button */}
+          {/* FAB */}
           <Button
             onClick={() => navigate('/add-item')}
             className={`fixed rounded-full bg-accent hover:bg-accent/90 shadow-medium hover:shadow-glow transition-all ${isMobile ? 'bottom-20 right-4 w-12 h-12' : 'bottom-24 right-6 w-14 h-14'}`}

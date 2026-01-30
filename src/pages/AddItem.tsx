@@ -10,20 +10,58 @@ import { useGuestStore } from '@/stores/guestStore';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { ScanReceipt } from '@/components/add-item/ScanReceipt';
+import { ItemSavedModal } from '@/components/add-item/ItemSavedModal';
+
 type AddItemMode = 'select' | 'manual' | 'photo' | 'receipt';
+
+type PantryTrackerInsert = {
+  name: string;
+  brand?: string | null;
+  category?: string;
+  purchased_at?: string;
+  estimated_expiration_at?: string | null;
+  estimated_restock_at?: string | null;
+  estimate_source?: string | null;
+  store_name?: string | null;
+  quantity?: number | null;
+  unit?: string | null;
+  user_id?: string | null;
+  guest_owner_id?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+function normalizeToPantryInsert(raw: any): PantryTrackerInsert {
+  const nowIso = new Date().toISOString();
+
+  return {
+    name: typeof raw?.name === 'string' ? raw.name.trim() : '',
+    brand: raw?.brand ?? null,
+    category: typeof raw?.category === 'string' && raw.category.trim() ? raw.category.trim() : 'Uncategorized',
+    purchased_at: typeof raw?.purchased_at === 'string' && raw.purchased_at ? raw.purchased_at : nowIso,
+    estimated_expiration_at: raw?.estimated_expiration_at ?? null,
+    estimated_restock_at: raw?.estimated_restock_at ?? null,
+    estimate_source: raw?.estimate_source ?? null,
+    store_name: raw?.store_name ?? null,
+    quantity: raw?.quantity ?? null,
+    unit: raw?.unit ?? null,
+    created_at: raw?.created_at ?? nowIso,
+    updated_at: raw?.updated_at ?? nowIso,
+  };
+}
 
 export function AddItem() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { addItem, isGuest } = useGuestStore();
   const { toast } = useToast();
+
   const [mode, setMode] = useState<AddItemMode>('select');
+  const [showSavedModal, setShowSavedModal] = useState(false);
 
   const handleBack = () => {
     if (mode === 'select') {
-      
-      navigate('/home');
-      
+      navigate('/pantry-tracker');
     } else {
       setMode('select');
     }
@@ -31,35 +69,49 @@ export function AddItem() {
 
   const handleItemSuccess = async (items: any | any[]) => {
     const itemsArray = Array.isArray(items) ? items : [items];
-    
+    const normalized = itemsArray.map(normalizeToPantryInsert);
+
+    const invalid = normalized.find((it) => !it.name || it.name.trim().length === 0);
+    if (invalid) {
+      toast({
+        title: 'Missing item name',
+        description: 'Please add a name for each item before saving.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     try {
       if (isGuest) {
-        // Add to local storage for guest users
-        itemsArray.forEach(item => addItem(item));
+        normalized.forEach((item) => addItem(item));
       } else if (user) {
-        // Add to Supabase for authenticated users
-        const itemsWithUserId = itemsArray.map(item => ({
+        const nowIso = new Date().toISOString();
+
+        const rowsToInsert = normalized.map((item) => ({
           ...item,
           user_id: user.id,
+          updated_at: nowIso,
+          created_at: item.created_at ?? nowIso,
         }));
 
         const { error } = await supabase
-          .from('items')
-          .insert(itemsWithUserId);
+          // @ts-expect-error - pantry_tracker not yet in generated types
+          .from('pantry_tracker')
+          .insert(rowsToInsert);
 
         if (error) throw error;
       }
 
-      // Log analytics event
+      // Best-effort analytics
       if (user || isGuest) {
         try {
           await supabase.from('events').insert({
             user_id: user?.id || null,
             name: 'items_added',
             payload: {
-              count: itemsArray.length,
+              count: normalized.length,
               method: mode,
-              categories: [...new Set(itemsArray.map(item => item.category))],
+              categories: [...new Set(normalized.map((item) => item.category || 'Uncategorized'))],
             },
           });
         } catch (analyticsError) {
@@ -67,7 +119,8 @@ export function AddItem() {
         }
       }
 
-      navigate('/home');
+      // ✅ Show the saved modal instead of navigating immediately
+      setShowSavedModal(true);
     } catch (error) {
       console.error('Error saving items:', error);
       toast({
@@ -78,33 +131,51 @@ export function AddItem() {
     }
   };
 
+  const handleViewPantry = () => {
+    setShowSavedModal(false);
+    navigate('/pantry-tracker');
+  };
+
   if (mode === 'manual') {
     return (
-      <ManualEntry
-        onBack={handleBack}
-        onSuccess={handleItemSuccess}
-      />
+      <>
+        <ManualEntry onBack={handleBack} onSuccess={handleItemSuccess} />
+        <ItemSavedModal
+          open={showSavedModal}
+          onClose={() => setShowSavedModal(false)}
+          onViewPantry={handleViewPantry}
+        />
+      </>
     );
   }
 
   if (mode === 'photo') {
     return (
-      <PhotoUpload
-        onBack={handleBack}
-        onSuccess={handleItemSuccess}
-      />
+      <>
+        <PhotoUpload onBack={handleBack} onSuccess={handleItemSuccess} />
+        <ItemSavedModal
+          open={showSavedModal}
+          onClose={() => setShowSavedModal(false)}
+          onViewPantry={handleViewPantry}
+        />
+      </>
     );
   }
 
   if (mode === 'receipt') {
-    // Placeholder for receipt scanning - will implement later
     return (
       <div className="min-h-screen bg-gradient-background flex items-center justify-center">
         <ProxCard className="max-w-md mx-4">
           <ProxCardContent className="text-center py-12">
-          <ScanReceipt onBack={handleBack} onSuccess={handleItemSuccess} />
+            <ScanReceipt onBack={handleBack} onSuccess={handleItemSuccess} />
           </ProxCardContent>
         </ProxCard>
+
+        <ItemSavedModal
+          open={showSavedModal}
+          onClose={() => setShowSavedModal(false)}
+          onViewPantry={handleViewPantry}
+        />
       </div>
     );
   }
@@ -133,7 +204,6 @@ export function AddItem() {
 
       {/* Add Options */}
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
-        {/* Manual Entry */}
         <ProxCard className="hover:shadow-medium transition-all cursor-pointer" onClick={() => setMode('manual')}>
           <ProxCardContent className="flex items-center p-6">
             <div className="w-12 h-12 bg-accent/10 rounded-prox flex items-center justify-center mr-4">
@@ -148,7 +218,6 @@ export function AddItem() {
           </ProxCardContent>
         </ProxCard>
 
-        {/* Photo Upload */}
         <ProxCard className="hover:shadow-medium transition-all cursor-pointer" onClick={() => setMode('photo')}>
           <ProxCardContent className="flex items-center p-6">
             <div className="w-12 h-12 bg-highlight/10 rounded-prox flex items-center justify-center mr-4">
@@ -163,10 +232,8 @@ export function AddItem() {
           </ProxCardContent>
         </ProxCard>
 
-        {/* Receipt Scanning */}
         <ProxCard className="hover:shadow-medium transition-all cursor-pointer" onClick={() => setMode('receipt')}>
           <ProxCardContent className="flex items-center p-6">
-
             <div className="w-12 h-12 bg-highlight/10 rounded-prox flex items-center justify-center mr-4">
               <Receipt className="h-6 w-6 text-highlight" />
             </div>
@@ -181,7 +248,6 @@ export function AddItem() {
           </ProxCardContent>
         </ProxCard>
 
-        {/* Tips Card */}
         <ProxCard className="bg-gradient-to-r from-accent/5 to-highlight/5 border-accent/20 mt-8">
           <ProxCardContent className="p-4">
             <div className="flex items-start space-x-3">
@@ -198,6 +264,12 @@ export function AddItem() {
           </ProxCardContent>
         </ProxCard>
       </div>
+
+      <ItemSavedModal
+        open={showSavedModal}
+        onClose={() => setShowSavedModal(false)}
+        onViewPantry={handleViewPantry}
+      />
     </div>
   );
 }

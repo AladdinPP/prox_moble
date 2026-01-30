@@ -15,14 +15,27 @@ import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { useUi } from '@/contexts/UiContext';
 
-
+const sizeOptions = [
+  { value: 'count', label: 'Count' },
+  { value: 'oz', label: 'Ounces (oz)' },
+  { value: 'lb', label: 'Pounds (lb)' },
+  { value: 'g', label: 'Grams (g)' },
+  { value: 'kg', label: 'Kilograms (kg)' },
+  { value: 'ml', label: 'Milliliters (ml)' },
+  { value: 'l', label: 'Liters (L)' },
+  { value: 'pack', label: 'Pack' },
+] as const;
 
 const manualEntrySchema = z.object({
   name: z.string().min(1, 'Item name is required'),
+  brand: z.string().min(1, 'Brand is required'),
   category: z.string().min(1, 'Please select a category'),
-  purchasedAt: z.date({
-    message: 'Purchase date is required',
-  }),
+  quantity: z
+    .string()
+    .min(1, 'Quantity is required')
+    .refine((val) => !Number.isNaN(Number(val)) && Number(val) > 0, 'Quantity must be a number greater than 0'),
+  unit: z.string().min(1, 'Size is required'),
+  purchasedAt: z.date({ message: 'Purchase date is required' }),
 });
 
 type ManualEntryForm = z.infer<typeof manualEntrySchema>;
@@ -43,23 +56,30 @@ export function ManualEntry({ onBack, onSuccess }: ManualEntryProps) {
     formState: { errors },
     setValue,
     watch,
-    reset
+    reset,
   } = useForm<ManualEntryForm>({
     resolver: zodResolver(manualEntrySchema),
     defaultValues: {
+      name: '',
+      brand: '',
+      category: '',
+      quantity: '',
+      unit: '',
       purchasedAt: new Date(),
-    }
+    },
   });
 
   const selectedDate = watch('purchasedAt');
-  const selectedCategory = watch('category');
+  const selectedCategory = watch('category') ?? '';
+  const selectedUnit = watch('unit') ?? '';
+
+  const categoryOptions = allCategories.filter((c) => c !== 'All');
 
   const onSubmit = async (data: ManualEntryForm) => {
     setIsLoading(true);
     try {
-      // Import the estimation service dynamically to avoid build issues
       const { estimateDates } = await import('@/services/dateEstimation');
-      
+
       const estimates = await estimateDates({
         name: data.name,
         category: data.category,
@@ -68,19 +88,31 @@ export function ManualEntry({ onBack, onSuccess }: ManualEntryProps) {
 
       const newItem = {
         name: data.name,
+        brand: data.brand,
         category: data.category,
-        purchased_at: data.purchasedAt.toISOString().split('T')[0],
-        estimated_expiration_at: estimates.estimatedExpirationAt,
-        estimated_restock_at: estimates.estimatedRestockAt,
-        estimate_source: estimates.source,
+        quantity: Number(data.quantity),
+        unit: data.unit, // "Size"
+        purchased_at: data.purchasedAt.toISOString(),
+        estimated_expiration_at: estimates.estimatedExpirationAt ?? null,
+        estimated_restock_at: estimates.estimatedRestockAt ?? null,
+        estimate_source: estimates.source ?? 'heuristics',
       };
 
+      // Keep your toast if you want; modal happens after save in AddItem.tsx
       toast({
         title: "Item added!",
         description: `${data.name} has been added to your pantry.`,
       });
 
-      reset();
+      reset({
+        name: '',
+        brand: '',
+        category: '',
+        quantity: '',
+        unit: '',
+        purchasedAt: new Date(),
+      });
+
       onSuccess(newItem);
     } catch (error) {
       console.error('Error adding item:', error);
@@ -100,12 +132,7 @@ export function ManualEntry({ onBack, onSuccess }: ManualEntryProps) {
       <div className="bg-card/95 backdrop-blur-sm border-b border-border/50 sticky top-0 z-10">
         <div className="max-w-2xl mx-auto px-4 py-4">
           <div className="flex items-center space-x-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onBack}
-              className="rounded-full"
-            >
+            <Button variant="ghost" size="icon" onClick={onBack} className="rounded-full">
               <ArrowLeft className="h-5 w-5" />
             </Button>
             <div>
@@ -124,6 +151,7 @@ export function ManualEntry({ onBack, onSuccess }: ManualEntryProps) {
           </ProxCardHeader>
           <ProxCardContent>
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+              {/* Item Name */}
               <div className="space-y-2">
                 <Label htmlFor="name" className="font-secondary">Item Name *</Label>
                 <Input
@@ -132,30 +160,78 @@ export function ManualEntry({ onBack, onSuccess }: ManualEntryProps) {
                   className="h-12"
                   placeholder="e.g., Organic Bananas"
                 />
-                {errors.name && (
-                  <p className="text-sm text-destructive">{errors.name.message}</p>
-                )}
+                {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
               </div>
 
+              {/* Brand */}
+              <div className="space-y-2">
+                <Label htmlFor="brand" className="font-secondary">Brand *</Label>
+                <Input
+                  id="brand"
+                  {...register('brand')}
+                  className="h-12"
+                  placeholder="e.g., Chiquita, Kirkland, Whole Foods"
+                />
+                {errors.brand && <p className="text-sm text-destructive">{errors.brand.message}</p>}
+              </div>
+
+              {/* Category */}
               <div className="space-y-2">
                 <Label htmlFor="category" className="font-secondary">Category *</Label>
-                <Select onValueChange={(value) => setValue('category', value)} value={selectedCategory}>
+                <Select
+                  value={selectedCategory}
+                  onValueChange={(value) => setValue('category', value, { shouldValidate: true, shouldDirty: true })}
+                >
                   <SelectTrigger className="h-12">
                     <SelectValue placeholder="Select a category" />
                   </SelectTrigger>
                   <SelectContent>
-                    {allCategories.map((category) => (
+                    {categoryOptions.map((category) => (
                       <SelectItem key={category} value={category}>
                         {category}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {errors.category && (
-                  <p className="text-sm text-destructive">{errors.category.message}</p>
-                )}
+                {errors.category && <p className="text-sm text-destructive">{errors.category.message}</p>}
               </div>
 
+              {/* Quantity + Size in a 2-col row */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="quantity" className="font-secondary">Quantity *</Label>
+                  <Input
+                    id="quantity"
+                    inputMode="decimal"
+                    {...register('quantity')}
+                    className="h-12"
+                    placeholder="e.g., 1, 2, 3"
+                  />
+                  {errors.quantity && <p className="text-sm text-destructive">{errors.quantity.message}</p>}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="unit" className="font-secondary">Size *</Label>
+                  <Select
+                    value={selectedUnit}
+                    onValueChange={(value) => setValue('unit', value, { shouldValidate: true, shouldDirty: true })}
+                  >
+                    <SelectTrigger className="h-12">
+                      <SelectValue placeholder="Select size" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {sizeOptions.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {errors.unit && <p className="text-sm text-destructive">{errors.unit.message}</p>}
+                </div>
+              </div>
+
+              {/* Purchase Date */}
               <div className="space-y-2">
                 <Label className="font-secondary">Purchase Date *</Label>
                 <Popover>
@@ -175,27 +251,18 @@ export function ManualEntry({ onBack, onSuccess }: ManualEntryProps) {
                     <Calendar
                       mode="single"
                       selected={selectedDate}
-                      onSelect={(date) => date && setValue('purchasedAt', date)}
-                      disabled={(date) =>
-                        date > new Date() || date < new Date("2020-01-01")
-                      }
+                      onSelect={(date) => date && setValue('purchasedAt', date, { shouldValidate: true })}
+                      disabled={(date) => date > new Date() || date < new Date("2020-01-01")}
                       initialFocus
                       className={cn("p-3 pointer-events-auto")}
                     />
                   </PopoverContent>
                 </Popover>
-                {errors.purchasedAt && (
-                  <p className="text-sm text-destructive">{errors.purchasedAt.message}</p>
-                )}
+                {errors.purchasedAt && <p className="text-sm text-destructive">{errors.purchasedAt.message}</p>}
               </div>
 
               <div className="flex space-x-3 pt-4">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={onBack}
-                  className="flex-1 h-12"
-                >
+                <Button type="button" variant="outline" onClick={onBack} className="flex-1 h-12">
                   Cancel
                 </Button>
                 <Button

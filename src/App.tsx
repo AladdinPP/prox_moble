@@ -32,6 +32,7 @@ import { TermsOfService } from "@/pages/TermsOfService";
 import { Deals } from "@/pages/Deals";
 import { Feedback } from "@/pages/Feedback";
 import { FeedbackThankYou } from "@/pages/FeedbackThankYou";
+import { EditPantryItem } from "@/pages/EditPantryItem";
 
 
 
@@ -78,6 +79,7 @@ function AppRoutes() {
       {/* Public / auth routes */}
       <Route path="/welcome" element={<Welcome />} />
       <Route path="/auth" element={<Auth />} />
+      <Route path="/pantry-tracker/edit/:id" element={<EditPantryItem />} />
 
       {/* NEW: /home now shows the Cart Finder experience */}
       <Route

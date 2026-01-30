@@ -1,4 +1,5 @@
 // Date estimation service with heuristic fallback and LLM integration
+import { supabase } from '@/integrations/supabase/client';
 
 interface EstimateDatesInput {
   name: string;
@@ -34,7 +35,7 @@ const HEURISTIC_RULES = {
       'mcintosh': { shelf_life: 35, restock: 21 },
       'pink lady': { shelf_life: 35, restock: 21 },
       'rome': { shelf_life: 35, restock: 21 },
-      
+
       // Citrus fruits
       'orange': { shelf_life: 14, restock: 10 },
       'navel orange': { shelf_life: 14, restock: 10 },
@@ -53,7 +54,7 @@ const HEURISTIC_RULES = {
       'clementine': { shelf_life: 10, restock: 7 },
       'minneola': { shelf_life: 14, restock: 10 },
       'pomelo': { shelf_life: 14, restock: 10 },
-      
+
       // Stone fruits
       'peach': { shelf_life: 4, restock: 7 },
       'nectarine': { shelf_life: 4, restock: 7 },
@@ -61,7 +62,7 @@ const HEURISTIC_RULES = {
       'plum': { shelf_life: 4, restock: 7 },
       'pluot': { shelf_life: 4, restock: 7 },
       'cherry': { shelf_life: 6, restock: 7 },
-      
+
       // Berries
       'strawberry': { shelf_life: 4, restock: 5 },
       'strawberries': { shelf_life: 4, restock: 5 },
@@ -74,7 +75,7 @@ const HEURISTIC_RULES = {
       'boysenberry': { shelf_life: 2, restock: 5 },
       'cranberry': { shelf_life: 5, restock: 7 },
       'cranberries': { shelf_life: 5, restock: 7 },
-      
+
       // Other fruits
       'banana': { shelf_life: 2, restock: 5 },
       'avocado': { shelf_life: 3, restock: 7 },
@@ -100,7 +101,7 @@ const HEURISTIC_RULES = {
       'passion fruit': { shelf_life: 5, restock: 7 },
       'starfruit': { shelf_life: 5, restock: 7 },
       'plantain': { shelf_life: 5, restock: 7 },
-      
+
       // Vegetables - Leafy greens
       'lettuce': { shelf_life: 10, restock: 7 },
       'iceberg': { shelf_life: 10, restock: 7 },
@@ -123,7 +124,7 @@ const HEURISTIC_RULES = {
       'spring mix': { shelf_life: 5, restock: 7 },
       'power greens': { shelf_life: 5, restock: 7 },
       'baby spinach': { shelf_life: 5, restock: 7 },
-      
+
       // Root vegetables
       'carrot': { shelf_life: 17, restock: 14 },
       'baby carrot': { shelf_life: 17, restock: 14 },
@@ -135,7 +136,7 @@ const HEURISTIC_RULES = {
       'parsnip': { shelf_life: 17, restock: 14 },
       'jicama': { shelf_life: 6, restock: 7 },
       'celeriac': { shelf_life: 5, restock: 7 },
-      
+
       // Onions and garlic (pantry storage)
       'onion': { shelf_life: 45, restock: 30 },
       'yellow onion': { shelf_life: 45, restock: 30 },
@@ -147,13 +148,13 @@ const HEURISTIC_RULES = {
       'scallion': { shelf_life: 6, restock: 7 },
       'garlic': { shelf_life: 120, restock: 60 }, // Pantry storage
       'ginger': { shelf_life: 25, restock: 21 },
-      
+
       // Potatoes and sweet potatoes (pantry)
       'potato': { shelf_life: 45, restock: 30 },
       'russet': { shelf_life: 45, restock: 30 },
       'sweet potato': { shelf_life: 17, restock: 14 },
       'yam': { shelf_life: 6, restock: 7 },
-      
+
       // Squash and gourds
       'butternut': { shelf_life: 30, restock: 21 },
       'acorn squash': { shelf_life: 30, restock: 21 },
@@ -163,7 +164,7 @@ const HEURISTIC_RULES = {
       'yellow squash': { shelf_life: 6, restock: 7 },
       'cucumber': { shelf_life: 5, restock: 7 },
       'eggplant': { shelf_life: 7, restock: 7 },
-      
+
       // Peppers
       'bell pepper': { shelf_life: 10, restock: 7 },
       'green pepper': { shelf_life: 10, restock: 7 },
@@ -177,7 +178,7 @@ const HEURISTIC_RULES = {
       'anaheim': { shelf_life: 10, restock: 7 },
       'banana pepper': { shelf_life: 10, restock: 7 },
       'shishito': { shelf_life: 10, restock: 7 },
-      
+
       // Tomatoes
       'tomato': { shelf_life: 4, restock: 7 },
       'roma': { shelf_life: 5, restock: 7 },
@@ -185,7 +186,7 @@ const HEURISTIC_RULES = {
       'grape tomato': { shelf_life: 4, restock: 7 },
       'heirloom': { shelf_life: 4, restock: 7 },
       'tomatillo': { shelf_life: 6, restock: 7 },
-      
+
       // Cruciferous vegetables
       'broccoli': { shelf_life: 4, restock: 7 },
       'broccolini': { shelf_life: 5, restock: 7 },
@@ -199,7 +200,7 @@ const HEURISTIC_RULES = {
       'baby bok choy': { shelf_life: 5, restock: 7 },
       'rapini': { shelf_life: 5, restock: 7 },
       'kohlrabi': { shelf_life: 6, restock: 7 },
-      
+
       // Other vegetables
       'celery': { shelf_life: 10, restock: 7 },
       'corn': { shelf_life: 1, restock: 5 },
@@ -216,11 +217,11 @@ const HEURISTIC_RULES = {
       'button mushroom': { shelf_life: 4, restock: 7 },
       'cremini': { shelf_life: 4, restock: 7 },
       'portobello': { shelf_life: 4, restock: 7 },
-      
+
       // Sprouts
       'alfalfa sprout': { shelf_life: 5, restock: 7 },
       'bean sprout': { shelf_life: 5, restock: 7 },
-      
+
       // Fresh herbs
       'basil': { shelf_life: 4, restock: 7 },
       'cilantro': { shelf_life: 4, restock: 7 },
@@ -253,14 +254,14 @@ const HEURISTIC_RULES = {
       'light cream': { shelf_life: 4, restock: 7 },
       'whipping cream': { shelf_life: 4, restock: 7 },
       'coffee creamer': { shelf_life: 4, restock: 7 },
-      
+
       // Plant milks
       'almond milk': { shelf_life: 8, restock: 7 },
       'soy milk': { shelf_life: 8, restock: 7 },
       'oat milk': { shelf_life: 8, restock: 7 },
       'coconut milk': { shelf_life: 8, restock: 7 },
       'cashew milk': { shelf_life: 8, restock: 7 },
-      
+
       // Eggs
       'eggs': { shelf_life: 30, restock: 14 },
       'egg': { shelf_life: 30, restock: 14 },
@@ -268,13 +269,13 @@ const HEURISTIC_RULES = {
       'egg yolks': { shelf_life: 3, restock: 7 },
       'egg substitutes': { shelf_life: 3, restock: 7 },
       'hard-cooked eggs': { shelf_life: 7, restock: 7 },
-      
+
       // Butter and spreads
       'butter': { shelf_life: 60, restock: 30 },
       'salted butter': { shelf_life: 60, restock: 30 },
       'unsalted butter': { shelf_life: 60, restock: 30 },
       'ghee': { shelf_life: 60, restock: 30 },
-      
+
       // Fresh cheeses
       'mozzarella': { shelf_life: 23, restock: 14 },
       'fresh mozzarella': { shelf_life: 7, restock: 7 },
@@ -286,7 +287,7 @@ const HEURISTIC_RULES = {
       'goat cheese': { shelf_life: 7, restock: 7 },
       'chèvre': { shelf_life: 7, restock: 7 },
       'feta': { shelf_life: 7, restock: 7 },
-      
+
       // Semi-hard cheeses
       'cheddar': { shelf_life: 23, restock: 14 },
       'swiss': { shelf_life: 23, restock: 14 },
@@ -304,20 +305,20 @@ const HEURISTIC_RULES = {
       'manchego': { shelf_life: 23, restock: 14 },
       'halloumi': { shelf_life: 23, restock: 14 },
       'ricotta salata': { shelf_life: 23, restock: 14 },
-      
+
       // Hard cheeses
       'parmesan': { shelf_life: 23, restock: 14 },
       'parmigiano-reggiano': { shelf_life: 23, restock: 14 },
       'pecorino romano': { shelf_life: 23, restock: 14 },
       'grana padano': { shelf_life: 23, restock: 14 },
       'asiago': { shelf_life: 23, restock: 14 },
-      
+
       // Soft-ripened cheeses
       'brie': { shelf_life: 7, restock: 7 },
       'camembert': { shelf_life: 7, restock: 7 },
       'blue cheese': { shelf_life: 7, restock: 7 },
       'taleggio': { shelf_life: 7, restock: 7 },
-      
+
       // Yogurt and fermented
       'yogurt': { shelf_life: 10, restock: 7 },
       'greek yogurt': { shelf_life: 10, restock: 7 },
@@ -337,7 +338,7 @@ const HEURISTIC_RULES = {
       'ground pork': { shelf_life: 1, restock: 7 },
       'ground lamb': { shelf_life: 1, restock: 7 },
       'ground veal': { shelf_life: 1, restock: 7 },
-      
+
       // Chicken
       'chicken breast': { shelf_life: 1, restock: 7 },
       'chicken thigh': { shelf_life: 1, restock: 7 },
@@ -348,14 +349,14 @@ const HEURISTIC_RULES = {
       'chicken leg quarter': { shelf_life: 1, restock: 7 },
       'whole chicken': { shelf_life: 1, restock: 7 },
       'rotisserie chicken': { shelf_life: 3, restock: 7 },
-      
+
       // Turkey
       'turkey breast': { shelf_life: 1, restock: 7 },
       'turkey thigh': { shelf_life: 1, restock: 7 },
       'turkey drumstick': { shelf_life: 1, restock: 7 },
       'turkey wing': { shelf_life: 1, restock: 7 },
       'whole turkey': { shelf_life: 1, restock: 7 },
-      
+
       // Beef cuts
       'beef steak': { shelf_life: 4, restock: 7 },
       'ribeye': { shelf_life: 4, restock: 7 },
@@ -381,7 +382,7 @@ const HEURISTIC_RULES = {
       'beef tongue': { shelf_life: 1, restock: 7 },
       'beef cheeks': { shelf_life: 1, restock: 7 },
       'oxtail': { shelf_life: 1, restock: 7 },
-      
+
       // Pork
       'pork chop': { shelf_life: 4, restock: 7 },
       'pork tenderloin': { shelf_life: 4, restock: 7 },
@@ -395,14 +396,14 @@ const HEURISTIC_RULES = {
       'fresh ham': { shelf_life: 4, restock: 7 },
       'pork cutlet': { shelf_life: 4, restock: 7 },
       'schnitzel': { shelf_life: 4, restock: 7 },
-      
+
       // Lamb
       'lamb chop': { shelf_life: 4, restock: 7 },
       'lamb rack': { shelf_life: 4, restock: 7 },
       'lamb leg': { shelf_life: 4, restock: 7 },
       'lamb shoulder': { shelf_life: 4, restock: 7 },
       'lamb shank': { shelf_life: 4, restock: 7 },
-      
+
       // Fish and seafood
       'salmon': { shelf_life: 1, restock: 5 },
       'tuna': { shelf_life: 1, restock: 5 },
@@ -428,7 +429,7 @@ const HEURISTIC_RULES = {
       'haddock': { shelf_life: 1, restock: 5 },
       'sablefish': { shelf_life: 1, restock: 5 },
       'black cod': { shelf_life: 1, restock: 5 },
-      
+
       // Shellfish
       'shrimp': { shelf_life: 4, restock: 7 },
       'crab': { shelf_life: 3, restock: 7 },
@@ -445,7 +446,7 @@ const HEURISTIC_RULES = {
       'shucked clams': { shelf_life: 6, restock: 7 },
       'shucked mussels': { shelf_life: 6, restock: 7 },
       'shucked oysters': { shelf_life: 6, restock: 7 },
-      
+
       // Processed meats
       'bacon': { shelf_life: 7, restock: 7 },
       'ham': { shelf_life: 4, restock: 7 },
@@ -459,24 +460,24 @@ const HEURISTIC_RULES = {
       'salami': { shelf_life: 4, restock: 7 },
       'mortadella': { shelf_life: 4, restock: 7 },
       'hot dogs': { shelf_life: 7, restock: 7 },
-      
+
       // Fresh sausages
       'fresh sausage': { shelf_life: 2, restock: 7 },
       'italian sausage': { shelf_life: 2, restock: 7 },
       'bratwurst': { shelf_life: 2, restock: 7 },
       'chorizo': { shelf_life: 2, restock: 7 },
-      
+
       // Cooked leftovers
       'cooked chicken': { shelf_life: 3, restock: 7 },
       'cooked beef': { shelf_life: 3, restock: 7 },
       'cooked pork': { shelf_life: 3, restock: 7 },
       'cooked fish': { shelf_life: 3, restock: 7 },
-      
+
       // Salads
       'chicken salad': { shelf_life: 3, restock: 7 },
       'tuna salad': { shelf_life: 3, restock: 7 },
       'egg salad': { shelf_life: 3, restock: 7 },
-      
+
       // Frozen designation
       'frozen': { shelf_life: 120, restock: 30 },
     }
@@ -508,7 +509,7 @@ const HEURISTIC_RULES = {
       'tortilla': { shelf_life: 4, restock: 7 },
       'corn tortilla': { shelf_life: 4, restock: 7 },
       'flour tortilla': { shelf_life: 4, restock: 7 },
-      
+
       // Grains and rice
       'rice': { shelf_life: 270, restock: 90 },
       'white rice': { shelf_life: 270, restock: 90 },
@@ -523,7 +524,7 @@ const HEURISTIC_RULES = {
       'couscous': { shelf_life: 270, restock: 90 },
       'polenta': { shelf_life: 270, restock: 90 },
       'cornmeal': { shelf_life: 270, restock: 90 },
-      
+
       // Pasta
       'pasta': { shelf_life: 270, restock: 90 },
       'spaghetti': { shelf_life: 270, restock: 90 },
@@ -532,7 +533,7 @@ const HEURISTIC_RULES = {
       'rotini': { shelf_life: 270, restock: 90 },
       'cooked pasta': { shelf_life: 3, restock: 7 },
       'cooked rice': { shelf_life: 3, restock: 7 },
-      
+
       // Flour and baking
       'flour': { shelf_life: 270, restock: 90 },
       'all-purpose flour': { shelf_life: 270, restock: 90 },
@@ -544,7 +545,7 @@ const HEURISTIC_RULES = {
       'granulated sugar': { shelf_life: 270, restock: 90 },
       'brown sugar': { shelf_life: 270, restock: 90 },
       'powdered sugar': { shelf_life: 270, restock: 90 },
-      
+
       // Canned goods - Low acid (2-5 years)
       'canned': { shelf_life: 1095, restock: 90 },
       'canned chicken': { shelf_life: 1095, restock: 90 },
@@ -560,7 +561,7 @@ const HEURISTIC_RULES = {
       'peas': { shelf_life: 1095, restock: 90 },
       'tuna': { shelf_life: 1095, restock: 90 },
       'chicken broth': { shelf_life: 1095, restock: 90 },
-      
+
       // Canned goods - High acid (12-18 months)
       'canned tomatoes': { shelf_life: 455, restock: 60 },
       'tomato sauce': { shelf_life: 455, restock: 60 },
@@ -569,12 +570,12 @@ const HEURISTIC_RULES = {
       'canned pears': { shelf_life: 455, restock: 60 },
       'canned pineapple': { shelf_life: 455, restock: 60 },
       'pumpkin puree': { shelf_life: 455, restock: 60 },
-      
+
       // Dry legumes
       'dry beans': { shelf_life: 730, restock: 180 },
       'lentils': { shelf_life: 730, restock: 180 },
       'split peas': { shelf_life: 730, restock: 180 },
-      
+
       // Nuts and seeds
       'nuts': { shelf_life: 180, restock: 60 },
       'almonds': { shelf_life: 180, restock: 60 },
@@ -586,19 +587,19 @@ const HEURISTIC_RULES = {
       'pumpkin seeds': { shelf_life: 180, restock: 60 },
       'pepitas': { shelf_life: 180, restock: 60 },
       'sunflower seeds': { shelf_life: 180, restock: 60 },
-      
+
       // Nut butters
       'peanut butter': { shelf_life: 75, restock: 30 },
       'almond butter': { shelf_life: 75, restock: 30 },
       'tahini': { shelf_life: 75, restock: 30 },
-      
+
       // Oils and vinegars
       'oil': { shelf_life: 180, restock: 90 },
       'olive oil': { shelf_life: 180, restock: 90 },
       'vegetable oil': { shelf_life: 180, restock: 90 },
       'sesame oil': { shelf_life: 180, restock: 90 },
       'vinegar': { shelf_life: 1095, restock: 365 }, // Keeps indefinitely
-      
+
       // Condiments and sauces
       'honey': { shelf_life: 1095, restock: 365 }, // Keeps indefinitely
       'jam': { shelf_life: 180, restock: 90 },
@@ -613,7 +614,7 @@ const HEURISTIC_RULES = {
       'salsa': { shelf_life: 120, restock: 60 },
       'salad dressing': { shelf_life: 120, restock: 60 },
       'vinaigrette': { shelf_life: 120, restock: 60 },
-      
+
       // Coffee and tea
       'coffee': { shelf_life: 150, restock: 60 },
       'ground coffee': { shelf_life: 45, restock: 30 },
@@ -621,7 +622,7 @@ const HEURISTIC_RULES = {
       'leaf tea': { shelf_life: 540, restock: 180 },
       'cold brew': { shelf_life: 8, restock: 7 },
       'iced tea': { shelf_life: 4, restock: 7 },
-      
+
       // Breakfast cereals and granola
       'cereal': { shelf_life: 270, restock: 60 },
       'breakfast cereal': { shelf_life: 270, restock: 60 },
@@ -632,7 +633,7 @@ const HEURISTIC_RULES = {
       'rice cereal': { shelf_life: 270, restock: 60 },
       'granola': { shelf_life: 270, restock: 60 },
       'muesli': { shelf_life: 270, restock: 60 },
-      
+
       // Snacks
       'crackers': { shelf_life: 270, restock: 60 },
       'cookies': { shelf_life: 270, restock: 60 },
@@ -642,7 +643,7 @@ const HEURISTIC_RULES = {
       'trail mix': { shelf_life: 150, restock: 60 },
       'protein bars': { shelf_life: 150, restock: 60 },
       'tortilla chips': { shelf_life: 150, restock: 60 },
-      
+
       // Macaroni salad and deli items (refrigerated)
       'macaroni salad': { shelf_life: 3, restock: 7 },
       'soups': { shelf_life: 3, restock: 7 },
@@ -656,14 +657,14 @@ const HEURISTIC_RULES = {
       'frozen fruit': { shelf_life: 150, restock: 60 },
       'frozen vegetables': { shelf_life: 150, restock: 60 },
       'frozen berries': { shelf_life: 150, restock: 60 },
-      
+
       // Frozen meals and proteins
       'ice cream': { shelf_life: 120, restock: 30 },
       'frozen pizza': { shelf_life: 120, restock: 30 },
       'frozen chicken nuggets': { shelf_life: 150, restock: 60 },
       'frozen fish fillets': { shelf_life: 150, restock: 60 },
       'frozen shrimp': { shelf_life: 150, restock: 60 },
-      
+
       // General frozen designation
       'frozen': { shelf_life: 120, restock: 30 },
     }
@@ -675,21 +676,21 @@ const HEURISTIC_RULES = {
       'juice': { shelf_life: 8, restock: 7 },
       'apple juice': { shelf_life: 8, restock: 7 },
       'orange juice': { shelf_life: 8, restock: 7 },
-      
+
       // Plant milks (already covered in Dairy but repeated here)
       'almond milk': { shelf_life: 8, restock: 7 },
       'soy milk': { shelf_life: 8, restock: 7 },
       'oat milk': { shelf_life: 8, restock: 7 },
       'coconut milk': { shelf_life: 8, restock: 7 },
       'cashew milk': { shelf_life: 8, restock: 7 },
-      
+
       // Sodas and carbonated beverages
       'soda': { shelf_life: 90, restock: 30 },
       'open soda': { shelf_life: 8, restock: 7 }, // Refrigerated after opening
-      
+
       // Water
       'water': { shelf_life: 365, restock: 60 },
-      
+
       // Coffee and tea beverages
       'coffee': { shelf_life: 150, restock: 60 },
       'tea': { shelf_life: 540, restock: 180 },
@@ -729,7 +730,7 @@ const HEURISTIC_RULES = {
       'litter': { shelf_life: 365, restock: 30 },
     }
   }
-};
+} as const;
 
 function getHeuristicEstimate(name: string, category: string): { shelf_life: number; restock: number } {
   const categoryRules = HEURISTIC_RULES[category as keyof typeof HEURISTIC_RULES];
@@ -738,37 +739,33 @@ function getHeuristicEstimate(name: string, category: string): { shelf_life: num
   }
 
   const nameLower = name.toLowerCase();
-  
+
   // Check for keyword matches
   for (const [keyword, rule] of Object.entries(categoryRules.keywords || {})) {
     if (nameLower.includes(keyword)) {
-      return rule;
+      return rule as { shelf_life: number; restock: number };
     }
   }
-  
+
   return categoryRules.default;
 }
 
+/**
+ * Calls Supabase Edge Function `estimate-dates` via supabase.functions.invoke()
+ * so auth/apikey headers are correctly included and CORS pain goes away.
+ */
 async function getLLMEstimate(input: EstimateDatesInput): Promise<{ shelf_life: number; restock: number } | null> {
   try {
-    const functionUrl = import.meta.env.VITE_SUPABASE_URL + "/functions/v1/estimate-dates";
-    if (!functionUrl) {
-      throw new Error('VITE_SUPABASE_URL environment variable not set');
-    }
-
-    const response = await fetch(functionUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(input),
+    const { data, error } = await supabase.functions.invoke('estimate-dates', {
+      body: input,
     });
 
-    if (!response.ok) {
-      throw new Error('LLM estimation failed');
+    if (error) throw error;
+
+    if (!data || typeof data.shelfLifeDays !== 'number' || typeof data.restockDays !== 'number') {
+      throw new Error('estimate-dates returned invalid payload');
     }
 
-    const data = await response.json();
     return {
       shelf_life: data.shelfLifeDays,
       restock: data.restockDays,
@@ -779,13 +776,17 @@ async function getLLMEstimate(input: EstimateDatesInput): Promise<{ shelf_life: 
   }
 }
 
+function toISODateOnly(d: Date): string {
+  return d.toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
 export async function estimateDates(input: EstimateDatesInput): Promise<EstimateDatesOutput> {
   const purchaseDate = new Date(input.purchasedAt);
-  
+
   // Try LLM first, fall back to heuristics
   let estimate = await getLLMEstimate(input);
   let source: 'heuristic' | 'llm' = 'llm';
-  
+
   if (!estimate) {
     estimate = getHeuristicEstimate(input.name, input.category);
     source = 'heuristic';
@@ -801,16 +802,17 @@ export async function estimateDates(input: EstimateDatesInput): Promise<Estimate
   // Cap expiration within 365 days
   const maxExpirationDate = new Date(purchaseDate);
   maxExpirationDate.setDate(maxExpirationDate.getDate() + 365);
-  
+
   if (expirationDate > maxExpirationDate) {
     expirationDate.setTime(maxExpirationDate.getTime());
   }
 
+  // Restock should not be after expiration
+  const restockClamped = restockDate > expirationDate ? expirationDate : restockDate;
+
   return {
-    estimatedExpirationAt: expirationDate.toISOString().split('T')[0],
-    estimatedRestockAt: Math.min(expirationDate.getTime(), restockDate.getTime()) === restockDate.getTime() 
-      ? restockDate.toISOString().split('T')[0]
-      : expirationDate.toISOString().split('T')[0],
+    estimatedExpirationAt: toISODateOnly(expirationDate),
+    estimatedRestockAt: toISODateOnly(restockClamped),
     source,
   };
 }
