@@ -87,9 +87,271 @@ type SingleStoreResult = {
 };
 
 const MAX_CANDIDATE_STORES = 30;
-const PLACEHOLDER_IMG =
-  "https://via.placeholder.com/100x100.png?text=No+Image";
+const PLACEHOLDER_IMG = "https://via.placeholder.com/100x100.png?text=No+Image";
+
+const normalizeImageUrl = (url: string | null): string => {
+  if (!url) return PLACEHOLDER_IMG;
+
+  const trimmed = String(url).trim();
+
+  // If it's already a full URL, use it
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+
+  // If it looks like an Instacart image-server path fragment, try to rebuild it
+  // e.g. "filters:fill(FFFFFF)/some/path.jpg"
+  if (trimmed.startsWith("filters:") || trimmed.startsWith("/filters:")) {
+    return `https://www.instacart.com/image-server/788x788/${trimmed.replace(/^\//, "")}`;
+  }
+
+  // If it's some other relative path, fall back
+  return PLACEHOLDER_IMG;
+};
+
 const ITEMS_PER_PAGE = 12;
+
+/* ============================================================
+   FEATURED MODE (pre-search) — category carousels (Option A)
+   - Anchor: cheapest item per keyword
+   - Fill: remaining up to 15 by best value (price per unit proxy), else price
+============================================================ */
+
+const FEATURED_LIMIT = 15;
+
+type FeaturedCategory = {
+  key: string;
+  label: string;
+  include: string[];
+  exclude?: string[];
+};
+
+// Category → keyword anchors
+const FEATURED_CATEGORIES: FeaturedCategory[] = [
+
+  {
+    key: "meat",
+    label: "Meat",
+    include: [
+      "ground beef",
+      "boneless skinless chicken breast",
+      "pork chops",
+      "beef tri tip",
+      "ground turkey",
+      "thick cut bacon",
+      "chicken thighs",
+      "beef chuck roast",
+    ],
+  },
+  {
+    key: "produce",
+    label: "Produce",
+    include: [
+      "gala apples",
+      "yellow bananas",
+      "romaine hearts",
+      "hass avocados",
+      "yellow onions",
+      "roma tomatoes",
+      "baby spinach",
+      "russet potatoes",
+    ],
+  },
+  {
+    key: "seafood",
+    label: "Seafood",
+    include: [
+      "atlantic salmon fillet",
+      "raw shrimp",
+      "tilapia fillet",
+      "ahi tuna",
+      "cod fillet",
+      "sea scallops",
+    ],
+  },
+  {
+    key: "drinks",
+    label: "Drinks",
+    include: [
+      "cola soda",
+      "orange juice",
+      "spring water bottle",
+      "sparkling water",
+      "green tea",
+      "iced tea",
+      "ground coffee",
+      "coffee beans",
+      "sports drink",
+      "vitamin water",
+    ],
+  },
+    {
+    key: "snacks",
+    label: "Snacks",
+    include: [
+      "chips",
+      "potato chips",
+      "tortilla chips",
+      "corn chips",
+      "doritos",
+      "lays",
+      "ruffles",
+      "cheetos",
+      "pringles",
+      "pretzels",
+      "crackers",
+      "cookies",
+      "popcorn",
+      "snack mix",
+    ],
+  },
+  {
+    key: "dairy_eggs",
+    label: "Dairy & Eggs",
+    include: [
+      "whole milk",
+      "2% milk",
+      "dozen large eggs",
+      "salted butter",
+      "unsalted butter",
+      "greek yogurt",
+      "shredded mozzarella cheese",
+      "cheddar cheese block",
+      "heavy whipping cream",
+      "half and half",
+      // NOTE: keep “sour cream” BUT exclude chip contexts below
+      "sour cream",
+    ],
+    exclude: [
+      "chips",
+      "chip",
+      "crisps",
+      "tortilla",
+      "doritos",
+      "lays",
+      "ruffles",
+      "pringles",
+      "snack",
+      "popcorn",
+      "crackers",
+      "pretzels",
+    ],
+  },
+  {
+    key: "bakery",
+    label: "Bakery",
+    include: [
+      "wheat sandwich bread",
+      "white sandwich bread",
+      "plain bagels",
+      "everything bagels",
+      "croissants",
+      "dinner rolls",
+      "hamburger buns",
+      "hot dog buns",
+      "cinnamon rolls",
+    ],
+  },
+  {
+    key: "pantry",
+    label: "Pantry",
+    include: [
+      "long grain rice",
+      "spaghetti pasta",
+      "penne pasta",
+      "marinara sauce",
+      "tomato sauce",
+      "olive oil",
+      "black beans",
+      "pinto beans",
+      "peanut butter",
+    ],
+    exclude: [
+      // avoids “pizza sauce” being treated pantry when it’s frozen pizza context sometimes
+      "frozen pizza",
+      "pizza",
+    ],
+  },
+  {
+    key: "frozen",
+    label: "Frozen",
+    include: [
+      "frozen pizza",
+      "ice cream",
+      "frozen waffles",
+      "frozen french fries",
+      "frozen berries",
+      "frozen vegetables",
+      "frozen chicken nuggets",
+      "frozen meals",
+    ],
+  },
+];
+
+
+// Parse size strings into an approximate "unit amount" so we can compute price/unit.
+// Supports common formats: "16 oz", "1 lb", "2 ct", "1 gal", "12 pack", "32 fl oz", "500 ml", etc.
+const parseUnitAmount = (sizeRaw: string | null): number | null => {
+  if (!sizeRaw) return null;
+  const s = sizeRaw.toLowerCase().replace(/,/g, " ").trim();
+
+  // capture "12 ct", "12 count", "12 pack"
+  const ctMatch = s.match(/(\d+(?:\.\d+)?)\s*(ct|count|pack)\b/);
+  if (ctMatch) return Number(ctMatch[1]);
+
+  // capture ounces (oz / fl oz)
+  const ozMatch = s.match(/(\d+(?:\.\d+)?)\s*(fl\s*oz|oz)\b/);
+  if (ozMatch) return Number(ozMatch[1]);
+
+  // capture pounds
+  const lbMatch = s.match(/(\d+(?:\.\d+)?)\s*lb\b/);
+  if (lbMatch) return Number(lbMatch[1]) * 16;
+
+  // capture grams
+  const gMatch = s.match(/(\d+(?:\.\d+)?)\s*g\b/);
+  if (gMatch) return Number(gMatch[1]) / 28.3495; // grams → ounces
+
+  // capture kg
+  const kgMatch = s.match(/(\d+(?:\.\d+)?)\s*kg\b/);
+  if (kgMatch) return (Number(kgMatch[1]) * 1000) / 28.3495;
+
+  // capture ml / l
+  const mlMatch = s.match(/(\d+(?:\.\d+)?)\s*ml\b/);
+  if (mlMatch) return Number(mlMatch[1]) / 29.5735; // ml → fl oz proxy
+  const lMatch = s.match(/(\d+(?:\.\d+)?)\s*l\b/);
+  if (lMatch) return (Number(lMatch[1]) * 1000) / 29.5735;
+
+  // capture gallon/quart/pint (convert to fl oz proxy)
+  const galMatch = s.match(/(\d+(?:\.\d+)?)\s*gal\b/);
+  if (galMatch) return Number(galMatch[1]) * 128;
+  const qtMatch = s.match(/(\d+(?:\.\d+)?)\s*qt\b/);
+  if (qtMatch) return Number(qtMatch[1]) * 32;
+  const ptMatch = s.match(/(\d+(?:\.\d+)?)\s*pt\b/);
+  if (ptMatch) return Number(ptMatch[1]) * 16;
+
+  // fallback: try "2 x 12 oz"
+  const multMatch = s.match(/(\d+)\s*x\s*(\d+(?:\.\d+)?)\s*(oz|fl\s*oz)\b/);
+  if (multMatch) return Number(multMatch[1]) * Number(multMatch[2]);
+
+  return null;
+};
+
+const valueScore = (price: number, sizeRaw: string | null): number => {
+  const amt = parseUnitAmount(sizeRaw);
+  if (!amt || !Number.isFinite(amt) || amt <= 0) return price; // fallback to price
+  return price / amt; // lower is better value
+};
+
+const matchesAny = (name: string, terms: string[]) => {
+  const n = name.toLowerCase();
+  return terms.some((t) => n.includes(t.toLowerCase()));
+};
+
+const matchesCategory = (name: string, cat: FeaturedCategory) => {
+  if (!matchesAny(name, cat.include)) return false;
+  if (cat.exclude && matchesAny(name, cat.exclude)) return false;
+  return true;
+};
+
+
 
 // Fuzzy matching functions (from Deals.tsx)
 const levenshtein = (a: string, b: string): number => {
@@ -533,6 +795,151 @@ export function CartFinder() {
 
   // --- Default zip logic (guest: 90064, signed-in: waitlist.zip_code) ---
   const [resolvedDefaultZip, setResolvedDefaultZip] = useState<string>("90064");
+  const effectiveZip = useMemo(() => {
+    const z = zipcode.trim();
+    if (z) return z;
+    return resolvedDefaultZip || "90064";
+  }, [zipcode, resolvedDefaultZip]);
+
+  // ============================================================
+  // Featured (pre-search) category carousels
+  // ============================================================
+  const [featuredByCategory, setFeaturedByCategory] = useState<
+    Record<string, OptimizedCartItem[]>
+  >({});
+  const [loadingFeatured, setLoadingFeatured] = useState(false);
+
+  // Fetch featured deals (only before initial search), similar to Deals.tsx featured mode.
+  // Pull from public.flyer_deals for effectiveZip.
+  // - Anchor: cheapest match per keyword
+  // - Fill: up to 15 by best value (price/unit proxy), else cheapest price
+  useEffect(() => {
+    if (initialSearchDone) return;
+
+    const fetchFeatured = async () => {
+      if (!/^\d{5}$/.test(effectiveZip)) return;
+
+      setLoadingFeatured(true);
+      try {
+        // Grab a reasonably large pool once, then derive all categories client-side.
+        // (More reliable than trying to OR many ilike clauses server-side.)
+        const { data, error } = await supabase
+          .from("flyer_deals")
+          .select(
+            "id, retailer, zip_code, product_name, product_price, image_link, product_size"
+          )
+          .eq("zip_code", effectiveZip)
+          .not("product_price", "is", null)
+          .not("product_name", "is", null)
+          .order("product_price", { ascending: true })
+          .limit(800);
+
+        if (error) throw error;
+
+        const pool = (data || [])
+          .filter((r: any) => r?.product_name != null)
+          .filter(
+            (r: any) =>
+              r?.product_price != null && !Number.isNaN(Number(r.product_price))
+          )
+          // ✅ Exclude Dollar Tree from Featured only
+          .filter((r: any) => String(r?.retailer ?? "").toLowerCase() !== "dollar-tree")
+          .map((r: any) => ({
+            id: Number(r.id),
+            retailer: String(r.retailer),
+            zip_code: String(r.zip_code),
+            product_name: String(r.product_name),
+            product_price: Number(r.product_price),
+            image_link: r.image_link ?? null,
+            product_size: r.product_size ?? null,
+            retailer_logo_url: null,
+          }));
+
+        const next: Record<string, OptimizedCartItem[]> = {};
+
+        for (const cat of FEATURED_CATEGORIES) {
+          // Candidate pool for category
+          const candidates = pool.filter((p) => matchesCategory(p.product_name, cat));
+
+          // Anchor picks: cheapest per keyword
+          const anchors: OptimizedCartItem[] = [];
+          const seen = new Set<string>();
+
+          for (const kw of cat.include) {
+            const kwLower = kw.toLowerCase();
+            const match = candidates
+              .filter((c) => c.product_name.toLowerCase().includes(kwLower))
+              .sort((a, b) => a.product_price - b.product_price)[0];
+
+            if (!match) continue;
+
+            const dedupeKey = `${match.product_name}@@${match.retailer}`;
+            if (seen.has(dedupeKey)) continue;
+            seen.add(dedupeKey);
+
+            anchors.push({
+              searched_item: `${cat.label}:${kw}`,
+              product_name: match.product_name,
+              product_price: match.product_price,
+              retailer: match.retailer,
+              zip_code: match.zip_code,
+              distance_m: 0,
+              product_size: match.product_size,
+              image_link: match.image_link,
+              retailer_logo_url: match.retailer_logo_url,
+            });
+          }
+
+          // Fill picks: best value score (price/unit proxy), fallback to price
+          const remaining = candidates
+            .filter((c) => {
+              const dedupeKey = `${c.product_name}@@${c.retailer}`;
+              return !seen.has(dedupeKey);
+            })
+            .map((c) => ({
+              ...c,
+              _value: valueScore(c.product_price, c.product_size),
+            }))
+            .sort((a, b) => {
+              if (a._value !== b._value) return a._value - b._value;
+              return a.product_price - b.product_price;
+            });
+
+          const filled: OptimizedCartItem[] = [...anchors];
+          for (const r of remaining) {
+            if (filled.length >= FEATURED_LIMIT) break;
+            const dedupeKey = `${r.product_name}@@${r.retailer}`;
+            if (seen.has(dedupeKey)) continue;
+            seen.add(dedupeKey);
+
+            filled.push({
+              searched_item: cat.label,
+              product_name: r.product_name,
+              product_price: r.product_price,
+              retailer: r.retailer,
+              zip_code: r.zip_code,
+              distance_m: 0,
+              product_size: r.product_size,
+              image_link: r.image_link,
+              retailer_logo_url: r.retailer_logo_url,
+            });
+          }
+
+          next[cat.key] = filled.slice(0, FEATURED_LIMIT);
+        }
+
+        setFeaturedByCategory(next);
+      } catch (e) {
+        console.error("Error fetching featured category deals:", e);
+        setFeaturedByCategory({});
+      } finally {
+        setLoadingFeatured(false);
+      }
+    };
+
+    fetchFeatured();
+  }, [effectiveZip, initialSearchDone]);
+
 
   useEffect(() => {
     const resolveZip = async () => {
@@ -560,11 +967,7 @@ export function CartFinder() {
     resolveZip();
   }, [user]);
 
-  const effectiveZip = useMemo(() => {
-    const z = zipcode.trim();
-    if (z) return z;
-    return resolvedDefaultZip || "90064";
-  }, [zipcode, resolvedDefaultZip]);
+
 
   const cartTotal = useMemo(() => {
     const total = items.reduce(
@@ -1306,7 +1709,7 @@ export function CartFinder() {
             className="flex flex-col rounded-xl border border-border/60 bg-background/50 p-3 relative transition-shadow hover:shadow-md"
           >
             <img
-              src={item.image_link || PLACEHOLDER_IMG}
+              src={normalizeImageUrl(item.image_link)}
               alt={item.product_name}
               className="h-28 w-full flex-shrink-0 rounded-md border bg-gray-50 object-cover"
               onError={(e) => {
@@ -1737,6 +2140,129 @@ export function CartFinder() {
       {/* MAIN CONTENT */}
       <div className="flex-1 pb-24">
         <div className="mx-auto max-w-3xl px-4 py-6 space-y-6">
+
+          {/* ============================================================
+              FEATURED MODE (Pre-search): category carousels
+          ============================================================ */}
+          {!initialSearchDone && (
+            <div className="space-y-6">
+              <div className="space-y-1">
+                <h2 className="text-base font-semibold">Featured Deals</h2>
+                <p className="text-xs text-muted-foreground">
+                  Near {effectiveZip} · {radius} miles
+                </p>
+              </div>
+
+              {loadingFeatured && (
+                <p className="text-sm text-muted-foreground py-8 text-center">
+                  Loading featured deals…
+                </p>
+              )}
+
+              {!loadingFeatured &&
+                FEATURED_CATEGORIES.map((cat) => {
+                  const deals = featuredByCategory[cat.key] || [];
+                  if (deals.length === 0) return null;
+
+                  return (
+                    <div
+                      key={cat.key}
+                      className="space-y-3 rounded-2xl border border-border/60 bg-card shadow-soft px-4 py-5"
+                    >
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-semibold">{cat.label}</h3>
+                        <span className="text-xs text-muted-foreground">
+                          {deals.length} picks
+                        </span>
+                      </div>
+
+                      <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
+                        {deals.map((item, idx) => {
+                          const key = `featured-${cat.key}-${item.product_name}-${item.retailer}-${item.zip_code}-${item.product_price}-${idx}`;
+                          const isAdded = addedItems.has(key);
+
+                          return (
+                            <div
+                              key={key}
+                              className="min-w-[170px] max-w-[170px] flex-shrink-0 rounded-xl border border-border/60 bg-background/50 p-3 relative transition-shadow hover:shadow-md"
+                            >
+                              <img
+                                src={normalizeImageUrl(item.image_link)}
+                                alt={item.product_name}
+                                className="h-24 w-full rounded-md border bg-gray-50 object-cover"
+                                onError={(e) => {
+                                  e.currentTarget.src = PLACEHOLDER_IMG;
+                                }}
+                              />
+
+                              <div className="pt-2 pb-8">
+                                <p className="truncate text-sm font-semibold text-foreground">
+                                  {item.product_name}
+                                </p>
+
+                                {item.product_size && (
+                                  <p className="text-xs text-muted-foreground">
+                                    Size: {item.product_size}
+                                  </p>
+                                )}
+
+                                <p className="mt-1 text-lg font-bold text-green-600">
+                                  ${Number(item.product_price).toFixed(2)}
+                                </p>
+
+                                <div className="flex items-center gap-2 mt-1">
+                                  {item.retailer_logo_url && (
+                                    <img
+                                      src={item.retailer_logo_url}
+                                      alt="logo"
+                                      className="h-4 w-auto object-contain"
+                                    />
+                                  )}
+                                  <p className="text-xs text-muted-foreground truncate">
+                                    {item.retailer}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="absolute bottom-3 right-3">
+                                <Button
+                                  size="icon"
+                                  className={`h-8 w-8 rounded-full shadow-md transition-all ${
+                                    isAdded
+                                      ? "bg-prox text-white hover:bg-prox-hover"
+                                      : "bg-white text-green-600 border border-green-200 hover:bg-green-50"
+                                  }`}
+                                  onClick={() => {
+                                    // mimic the same “added flash” behavior as search cards
+                                    const flashKey = key;
+                                    handleAddDealToCart(item);
+                                    setAddedItems((prev) => new Set(prev).add(flashKey));
+                                    setTimeout(() => {
+                                      setAddedItems((prev) => {
+                                        const next = new Set(prev);
+                                        next.delete(flashKey);
+                                        return next;
+                                      });
+                                    }, 1500);
+                                  }}
+                                >
+                                  {isAdded ? (
+                                    <Check className="h-4 w-4" />
+                                  ) : (
+                                    <Plus className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          )}
+
           {/* Single item mode */}
           {initialSearchDone && editableCartItems.length === 1 && (
             <div className="space-y-4 rounded-2xl border border-border/60 bg-card shadow-soft px-4 py-5">
