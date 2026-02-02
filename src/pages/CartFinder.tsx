@@ -1,5 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import "leaflet/dist/leaflet.css";
+import L from "leaflet";
+import { MapContainer, TileLayer, Marker, useMap } from "react-leaflet";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -27,11 +30,11 @@ import {
   Search as SearchIcon,
   ShoppingBag,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   Plus,
   Check,
   X,
+  Upload,
+  Camera,
 } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
 import { useToast } from "@/hooks/use-toast";
@@ -88,8 +91,181 @@ type SingleStoreResult = {
   retailer_logo_url: string | null;
 };
 
+// Map marker data for the store map visualization
+type MapStorePoint = {
+  idx: number;                // 0..4
+  labelNumber: number;        // 1..5
+  retailer: string;
+  zip_code: string;
+  total: number;
+  distance_m: number;
+  retailer_logo_url: string | null;
+  lat?: number;               // Not available yet - see TODO below
+  lng?: number;               // Not available yet - see TODO below
+};
+
 const MAX_CANDIDATE_STORES = 30;
 const PLACEHOLDER_IMG = "https://via.placeholder.com/100x100.png?text=No+Image";
+
+// --- Zip Centroid Lookup with Nominatim (cached) ---
+type ZipCentroid = { lat: number; lng: number } | null;
+const zipCentroidCache = new Map<string, ZipCentroid>();
+
+async function getZipCentroid(zip: string): Promise<ZipCentroid> {
+  if (!/^\d{5}$/.test(zip)) return null;
+
+  // Check cache first
+  if (zipCentroidCache.has(zip)) {
+    return zipCentroidCache.get(zip)!;
+  }
+
+  try {
+    // Use OpenStreetMap Nominatim (free, no API key required)
+    const url = `https://nominatim.openstreetmap.org/search?postalcode=${zip}&country=US&format=json&limit=1`;
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": "ProxApp/1.0 (grocery price comparison)",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Nominatim request failed: ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    if (data && data.length > 0 && data[0].lat && data[0].lon) {
+      const result: ZipCentroid = {
+        lat: parseFloat(data[0].lat),
+        lng: parseFloat(data[0].lon),
+      };
+      zipCentroidCache.set(zip, result);
+      return result;
+    }
+
+    // No results found
+    zipCentroidCache.set(zip, null);
+    return null;
+  } catch (error) {
+    console.warn("Failed to fetch zip centroid:", error);
+    zipCentroidCache.set(zip, null);
+    return null;
+  }
+}
+
+// --- Deterministic Jitter for Map Markers ---
+// Simple string hash function for deterministic results
+function hashString(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32-bit integer
+  }
+  return Math.abs(hash);
+}
+
+// Convert hash to float between 0 and 1
+function hashToFloat(seed: string, idx: number): number {
+  const combined = `${seed}-${idx}`;
+  const hash = hashString(combined);
+  return (hash % 10000) / 10000;
+}
+
+// Generate jittered coordinates around a centroid
+const JITTER_RANGE = 0.005; // ~0.5km / 0.3 miles
+
+function getJitteredCoordinates(
+  centroid: { lat: number; lng: number },
+  seed: string,
+  idx: number
+): { lat: number; lng: number } {
+  // Use different seeds for lat and lng to avoid diagonal patterns
+  const latOffset = (hashToFloat(seed + "lat", idx) - 0.5) * JITTER_RANGE * 2;
+  const lngOffset = (hashToFloat(seed + "lng", idx) - 0.5) * JITTER_RANGE * 2;
+
+  return {
+    lat: centroid.lat + latOffset,
+    lng: centroid.lng + lngOffset,
+  };
+}
+
+// --- Custom Leaflet Marker Icon ---
+function createStoreMarkerIcon(
+  labelNumber: number,
+  price: number,
+  isSelected: boolean
+): L.DivIcon {
+  const bgColor = isSelected ? "#10B981" : "#6366F1"; // green if selected, indigo otherwise
+  const priceText = `$${price.toFixed(2)}`;
+
+  return L.divIcon({
+    className: "custom-store-marker",
+    html: `
+      <div style="
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        transform: translate(-50%, -100%);
+      ">
+        <div style="
+          background: white;
+          border: 2px solid ${bgColor};
+          border-radius: 8px;
+          padding: 2px 6px;
+          font-size: 11px;
+          font-weight: 700;
+          color: #059669;
+          white-space: nowrap;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        ">${priceText}</div>
+        <div style="
+          width: 28px;
+          height: 28px;
+          border-radius: 50%;
+          background: ${bgColor};
+          color: white;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: 700;
+          font-size: 14px;
+          margin-top: 2px;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+          border: 2px solid white;
+        ">${labelNumber}</div>
+        <div style="
+          width: 0;
+          height: 0;
+          border-left: 6px solid transparent;
+          border-right: 6px solid transparent;
+          border-top: 8px solid ${bgColor};
+          margin-top: -2px;
+        "></div>
+      </div>
+    `,
+    iconSize: [60, 70],
+    iconAnchor: [30, 70],
+  });
+}
+
+// --- Map Bounds Fitter Component ---
+function FitBoundsToMarkers({ points }: { points: Array<{ lat: number; lng: number }> }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (points.length === 0) return;
+
+    if (points.length === 1) {
+      map.setView([points[0].lat, points[0].lng], 14);
+    } else {
+      const bounds = L.latLngBounds(points.map(p => [p.lat, p.lng]));
+      map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
+    }
+  }, [map, points]);
+
+  return null;
+}
 
 const normalizeImageUrl = (url: string | null): string => {
   if (!url) return PLACEHOLDER_IMG;
@@ -111,253 +287,7 @@ const normalizeImageUrl = (url: string | null): string => {
 
 const ITEMS_PER_PAGE = 12;
 
-/* ============================================================
-   FEATURED MODE (pre-search) — category carousels (Option A)
-   - Anchor: cheapest item per keyword
-   - Fill: remaining up to 15 by best value (price per unit proxy), else price
-============================================================ */
-
-const FEATURED_LIMIT = 15;
-
-type FeaturedCategory = {
-  key: string;
-  label: string;
-  include: string[];
-  exclude?: string[];
-};
-
-// Category → keyword anchors
-const FEATURED_CATEGORIES: FeaturedCategory[] = [
-
-  {
-    key: "meat",
-    label: "Meat",
-    include: [
-      "ground beef",
-      "boneless skinless chicken breast",
-      "pork chops",
-      "beef tri tip",
-      "ground turkey",
-      "thick cut bacon",
-      "chicken thighs",
-      "beef chuck roast",
-    ],
-  },
-  {
-    key: "produce",
-    label: "Produce",
-    include: [
-      "gala apples",
-      "yellow bananas",
-      "romaine hearts",
-      "hass avocados",
-      "yellow onions",
-      "roma tomatoes",
-      "baby spinach",
-      "russet potatoes",
-    ],
-  },
-  {
-    key: "seafood",
-    label: "Seafood",
-    include: [
-      "atlantic salmon fillet",
-      "raw shrimp",
-      "tilapia fillet",
-      "ahi tuna",
-      "cod fillet",
-      "sea scallops",
-    ],
-  },
-  {
-    key: "drinks",
-    label: "Drinks",
-    include: [
-      "cola soda",
-      "orange juice",
-      "spring water bottle",
-      "sparkling water",
-      "green tea",
-      "iced tea",
-      "ground coffee",
-      "coffee beans",
-      "sports drink",
-      "vitamin water",
-    ],
-  },
-    {
-    key: "snacks",
-    label: "Snacks",
-    include: [
-      "chips",
-      "potato chips",
-      "tortilla chips",
-      "corn chips",
-      "doritos",
-      "lays",
-      "ruffles",
-      "cheetos",
-      "pringles",
-      "pretzels",
-      "crackers",
-      "cookies",
-      "popcorn",
-      "snack mix",
-    ],
-  },
-  {
-    key: "dairy_eggs",
-    label: "Dairy & Eggs",
-    include: [
-      "whole milk",
-      "2% milk",
-      "dozen large eggs",
-      "salted butter",
-      "unsalted butter",
-      "greek yogurt",
-      "shredded mozzarella cheese",
-      "cheddar cheese block",
-      "shredded cheese",
-      "cheese slices",
-      "heavy whipping cream",
-      "half and half",
-      // NOTE: keep “sour cream” BUT exclude chip contexts below
-      "sour cream",
-    ],
-    exclude: [
-      "chips",
-      "chip",
-      "crisps",
-      "tortilla",
-      "doritos",
-      "lays",
-      "ruffles",
-      "pringles",
-      "snack",
-      "popcorn",
-      "crackers",
-      "pretzels",
-    ],
-  },
-  {
-    key: "bakery",
-    label: "Bakery",
-    include: [
-      "wheat sandwich bread",
-      "white sandwich bread",
-      "plain bagels",
-      "everything bagels",
-      "croissants",
-      "dinner rolls",
-      "hamburger buns",
-      "hot dog buns",
-      "cinnamon rolls",
-    ],
-  },
-  {
-    key: "pantry",
-    label: "Pantry",
-    include: [
-      "long grain rice",
-      "spaghetti pasta",
-      "penne pasta",
-      "marinara sauce",
-      "tomato sauce",
-      "olive oil",
-      "black beans",
-      "pinto beans",
-      "peanut butter",
-    ],
-    exclude: [
-      // avoids “pizza sauce” being treated pantry when it’s frozen pizza context sometimes
-      "frozen pizza",
-      "pizza",
-    ],
-  },
-  {
-    key: "frozen",
-    label: "Frozen",
-    include: [
-      "frozen pizza",
-      "ice cream",
-      "frozen waffles",
-      "frozen french fries",
-      "frozen berries",
-      "frozen vegetables",
-      "frozen chicken nuggets",
-      "frozen meals",
-    ],
-  },
-];
-
-
-// Parse size strings into an approximate "unit amount" so we can compute price/unit.
-// Supports common formats: "16 oz", "1 lb", "2 ct", "1 gal", "12 pack", "32 fl oz", "500 ml", etc.
-const parseUnitAmount = (sizeRaw: string | null): number | null => {
-  if (!sizeRaw) return null;
-  const s = sizeRaw.toLowerCase().replace(/,/g, " ").trim();
-
-  // capture "12 ct", "12 count", "12 pack"
-  const ctMatch = s.match(/(\d+(?:\.\d+)?)\s*(ct|count|pack)\b/);
-  if (ctMatch) return Number(ctMatch[1]);
-
-  // capture ounces (oz / fl oz)
-  const ozMatch = s.match(/(\d+(?:\.\d+)?)\s*(fl\s*oz|oz)\b/);
-  if (ozMatch) return Number(ozMatch[1]);
-
-  // capture pounds
-  const lbMatch = s.match(/(\d+(?:\.\d+)?)\s*lb\b/);
-  if (lbMatch) return Number(lbMatch[1]) * 16;
-
-  // capture grams
-  const gMatch = s.match(/(\d+(?:\.\d+)?)\s*g\b/);
-  if (gMatch) return Number(gMatch[1]) / 28.3495; // grams → ounces
-
-  // capture kg
-  const kgMatch = s.match(/(\d+(?:\.\d+)?)\s*kg\b/);
-  if (kgMatch) return (Number(kgMatch[1]) * 1000) / 28.3495;
-
-  // capture ml / l
-  const mlMatch = s.match(/(\d+(?:\.\d+)?)\s*ml\b/);
-  if (mlMatch) return Number(mlMatch[1]) / 29.5735; // ml → fl oz proxy
-  const lMatch = s.match(/(\d+(?:\.\d+)?)\s*l\b/);
-  if (lMatch) return (Number(lMatch[1]) * 1000) / 29.5735;
-
-  // capture gallon/quart/pint (convert to fl oz proxy)
-  const galMatch = s.match(/(\d+(?:\.\d+)?)\s*gal\b/);
-  if (galMatch) return Number(galMatch[1]) * 128;
-  const qtMatch = s.match(/(\d+(?:\.\d+)?)\s*qt\b/);
-  if (qtMatch) return Number(qtMatch[1]) * 32;
-  const ptMatch = s.match(/(\d+(?:\.\d+)?)\s*pt\b/);
-  if (ptMatch) return Number(ptMatch[1]) * 16;
-
-  // fallback: try "2 x 12 oz"
-  const multMatch = s.match(/(\d+)\s*x\s*(\d+(?:\.\d+)?)\s*(oz|fl\s*oz)\b/);
-  if (multMatch) return Number(multMatch[1]) * Number(multMatch[2]);
-
-  return null;
-};
-
-const valueScore = (price: number, sizeRaw: string | null): number => {
-  const amt = parseUnitAmount(sizeRaw);
-  if (!amt || !Number.isFinite(amt) || amt <= 0) return price; // fallback to price
-  return price / amt; // lower is better value
-};
-
-const matchesAny = (name: string, terms: string[]) => {
-  const n = name.toLowerCase();
-  return terms.some((t) => n.includes(t.toLowerCase()));
-};
-
-const matchesCategory = (name: string, cat: FeaturedCategory) => {
-  if (!matchesAny(name, cat.include)) return false;
-  if (cat.exclude && matchesAny(name, cat.exclude)) return false;
-  return true;
-};
-
-
-
-// Fuzzy matching functions (from Deals.tsx)
+// Fuzzy matching functions
 const levenshtein = (a: string, b: string): number => {
   const m = a.length;
   const n = b.length;
@@ -760,6 +690,14 @@ export function CartFinder() {
     []
   );
 
+  // Selected store index for map marker interaction
+  const [selectedStoreIndex, setSelectedStoreIndex] = useState(0);
+
+  // Zip centroid for map positioning
+  const [zipCentroid, setZipCentroid] = useState<ZipCentroid>(null);
+  const [zipCentroidLoading, setZipCentroidLoading] = useState(false);
+  const [zipCentroidError, setZipCentroidError] = useState(false);
+
   const [refineOpen, setRefineOpen] = useState(false);
   const [addedItems, setAddedItems] = useState<Set<string>>(new Set());
 
@@ -805,213 +743,6 @@ export function CartFinder() {
     return resolvedDefaultZip || "90064";
   }, [zipcode, resolvedDefaultZip]);
 
-  // ============================================================
-  // Featured (pre-search) category carousels
-  // ============================================================
-  const [featuredByCategory, setFeaturedByCategory] = useState<
-    Record<string, OptimizedCartItem[]>
-  >({});
-  const [loadingFeatured, setLoadingFeatured] = useState(false);
-
-  // Carousel scroll state for arrow visibility
-  const [carouselScrollStates, setCarouselScrollStates] = useState<
-    Record<string, { showLeft: boolean; showRight: boolean }>
-  >({});
-  const carouselRefs = useRef<Record<string, HTMLDivElement | null>>({});
-
-  // Fetch featured deals (only before initial search), similar to Deals.tsx featured mode.
-  // Pull from public.flyer_deals for effectiveZip.
-  // - Anchor: cheapest match per keyword
-  // - Fill: up to 15 by best value (price/unit proxy), else cheapest price
-  useEffect(() => {
-    if (initialSearchDone) return;
-
-    const fetchFeatured = async () => {
-      if (!/^\d{5}$/.test(effectiveZip)) return;
-
-      setLoadingFeatured(true);
-      try {
-        // Grab a reasonably large pool once, then derive all categories client-side.
-        // (More reliable than trying to OR many ilike clauses server-side.)
-        const { data, error } = await supabase
-          .from("flyer_deals")
-          .select(
-            "id, retailer, zip_code, product_name, product_price, image_link, product_size"
-          )
-          .eq("zip_code", effectiveZip)
-          .not("product_price", "is", null)
-          .not("product_name", "is", null)
-          .order("product_price", { ascending: true })
-          .limit(800);
-
-        if (error) throw error;
-
-        const pool = (data || [])
-          .filter((r: any) => r?.product_name != null)
-          .filter(
-            (r: any) =>
-              r?.product_price != null && !Number.isNaN(Number(r.product_price))
-          )
-          // ✅ Exclude Dollar Tree from Featured only
-          .filter((r: any) => String(r?.retailer ?? "").toLowerCase() !== "dollar-tree")
-          .map((r: any) => ({
-            id: Number(r.id),
-            retailer: String(r.retailer),
-            zip_code: String(r.zip_code),
-            product_name: String(r.product_name),
-            product_price: Number(r.product_price),
-            image_link: r.image_link ?? null,
-            product_size: r.product_size ?? null,
-            retailer_logo_url: null,
-          }));
-
-        const next: Record<string, OptimizedCartItem[]> = {};
-
-        for (const cat of FEATURED_CATEGORIES) {
-          // Candidate pool for category
-          const candidates = pool.filter((p) => matchesCategory(p.product_name, cat));
-
-          // Anchor picks: cheapest per keyword
-          const anchors: OptimizedCartItem[] = [];
-          const seen = new Set<string>();
-
-          for (const kw of cat.include) {
-            const kwLower = kw.toLowerCase();
-            const match = candidates
-              .filter((c) => c.product_name.toLowerCase().includes(kwLower))
-              .sort((a, b) => a.product_price - b.product_price)[0];
-
-            if (!match) continue;
-
-            const dedupeKey = `${match.product_name}@@${match.retailer}`;
-            if (seen.has(dedupeKey)) continue;
-            seen.add(dedupeKey);
-
-            anchors.push({
-              searched_item: `${cat.label}:${kw}`,
-              product_name: match.product_name,
-              product_price: match.product_price,
-              retailer: match.retailer,
-              zip_code: match.zip_code,
-              distance_m: 0,
-              product_size: match.product_size,
-              image_link: match.image_link,
-              retailer_logo_url: match.retailer_logo_url,
-            });
-          }
-
-          // Fill picks: best value score (price/unit proxy), fallback to price
-          const remaining = candidates
-            .filter((c) => {
-              const dedupeKey = `${c.product_name}@@${c.retailer}`;
-              return !seen.has(dedupeKey);
-            })
-            .map((c) => ({
-              ...c,
-              _value: valueScore(c.product_price, c.product_size),
-            }))
-            .sort((a, b) => {
-              if (a._value !== b._value) return a._value - b._value;
-              return a.product_price - b.product_price;
-            });
-
-          const filled: OptimizedCartItem[] = [...anchors];
-          for (const r of remaining) {
-            if (filled.length >= FEATURED_LIMIT) break;
-            const dedupeKey = `${r.product_name}@@${r.retailer}`;
-            if (seen.has(dedupeKey)) continue;
-            seen.add(dedupeKey);
-
-            filled.push({
-              searched_item: cat.label,
-              product_name: r.product_name,
-              product_price: r.product_price,
-              retailer: r.retailer,
-              zip_code: r.zip_code,
-              distance_m: 0,
-              product_size: r.product_size,
-              image_link: r.image_link,
-              retailer_logo_url: r.retailer_logo_url,
-            });
-          }
-
-          next[cat.key] = filled.slice(0, FEATURED_LIMIT);
-        }
-
-        setFeaturedByCategory(next);
-      } catch (e) {
-        console.error("Error fetching featured category deals:", e);
-        setFeaturedByCategory({});
-      } finally {
-        setLoadingFeatured(false);
-      }
-    };
-
-    fetchFeatured();
-  }, [effectiveZip, initialSearchDone]);
-
-  // Helper function to check scroll position and update arrow visibility
-  const checkScrollPosition = (categoryKey: string) => {
-    const container = carouselRefs.current[categoryKey];
-    if (!container) return;
-
-    const { scrollLeft, scrollWidth, clientWidth } = container;
-    const isAtStart = scrollLeft <= 5;
-    const isAtEnd = scrollLeft + clientWidth >= scrollWidth - 5;
-
-    setCarouselScrollStates((prev) => ({
-      ...prev,
-      [categoryKey]: {
-        showLeft: !isAtStart,
-        showRight: !isAtEnd,
-      },
-    }));
-  };
-
-  // Initialize scroll states when featured data loads
-  useEffect(() => {
-    if (!loadingFeatured && Object.keys(featuredByCategory).length > 0) {
-      // Initialize all carousel scroll states
-      const initialStates: Record<string, { showLeft: boolean; showRight: boolean }> = {};
-
-      FEATURED_CATEGORIES.forEach((cat) => {
-        const deals = featuredByCategory[cat.key] || [];
-        if (deals.length > 0) {
-          initialStates[cat.key] = { showLeft: false, showRight: true };
-        }
-      });
-
-      setCarouselScrollStates(initialStates);
-
-      // Check actual scroll positions after render
-      setTimeout(() => {
-        FEATURED_CATEGORIES.forEach((cat) => {
-          if (featuredByCategory[cat.key]?.length > 0) {
-            checkScrollPosition(cat.key);
-          }
-        });
-      }, 100);
-    }
-  }, [loadingFeatured, featuredByCategory]);
-
-  // Handle carousel scroll
-  const handleCarouselScroll = (categoryKey: string, direction: 'left' | 'right') => {
-    const container = carouselRefs.current[categoryKey];
-    if (!container) return;
-
-    const scrollAmount = container.clientWidth * 0.75; // 75% of visible width
-    const targetScroll = direction === 'left'
-      ? container.scrollLeft - scrollAmount
-      : container.scrollLeft + scrollAmount;
-
-    container.scrollTo({
-      left: targetScroll,
-      behavior: 'smooth',
-    });
-
-    // Update arrow visibility after scroll completes
-    setTimeout(() => checkScrollPosition(categoryKey), 300);
-  };
 
   useEffect(() => {
     const resolveZip = async () => {
@@ -1039,7 +770,27 @@ export function CartFinder() {
     resolveZip();
   }, [user]);
 
+  // Fetch zip centroid when effectiveZip changes (for map positioning)
+  useEffect(() => {
+    const fetchCentroid = async () => {
+      const zip = effectiveZip;
+      if (!zip || !/^\d{5}$/.test(zip)) {
+        setZipCentroid(null);
+        setZipCentroidError(true);
+        return;
+      }
 
+      setZipCentroidLoading(true);
+      setZipCentroidError(false);
+
+      const result = await getZipCentroid(zip);
+      setZipCentroid(result);
+      setZipCentroidError(result === null);
+      setZipCentroidLoading(false);
+    };
+
+    fetchCentroid();
+  }, [effectiveZip]);
 
   const cartTotal = useMemo(() => {
     const total = items.reduce(
@@ -1849,8 +1600,9 @@ export function CartFinder() {
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-background text-foreground">
-      {/* DEALS-STYLE STICKY TOP AREA */}
-      <div className="sticky top-0 z-20 bg-prox">
+      {/* DEALS-STYLE STICKY TOP AREA - Only show after initial search */}
+      {initialSearchDone && (
+        <div className="sticky top-0 z-20 bg-prox">
         <div
           ref={locationPanelRef}
           className="mx-auto max-w-3xl px-4 py-3 space-y-3"
@@ -2060,13 +1812,13 @@ export function CartFinder() {
 
           {/* ✅ Refine Search now shows for single item too */}
           {initialSearchDone && editableCartItems.length >= 1 && (
-            <div className="rounded-2xl border border-border/60 bg-white shadow-soft px-4 py-4">
+            <div className="relative z-20 rounded-2xl border border-border/60 bg-white shadow-soft px-4 py-4">
               <button
                 type="button"
                 onClick={() => setRefineOpen((v) => !v)}
                 className="w-full flex items-center justify-between"
               >
-                <h2 className="text-lg font-semibold text-foreground">Refine search</h2>
+                <h2 className="text-lg font-semibold text-foreground">Edit Ingredients</h2>
                 <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
                   <span className="text-xs">{refineOpen ? "Hide" : "Show"}</span>
                 </span>
@@ -2208,182 +1960,178 @@ export function CartFinder() {
           )}
         </div>
       </div>
+      )}
 
       {/* MAIN CONTENT */}
       <div className="flex-1 pb-24">
         <div className="mx-auto max-w-3xl px-4 py-6 space-y-6">
 
           {/* ============================================================
-              FEATURED MODE (Pre-search): category carousels
+              LANDING SCREEN (Pre-search)
           ============================================================ */}
           {!initialSearchDone && (
             <div className="space-y-6">
-              <div className="space-y-1">
-                <h2 className="text-base font-semibold">Featured Deals</h2>
-                <p className="text-xs text-muted-foreground">
-                  Near {effectiveZip} · {radius} miles
-                </p>
+              {/* Header with Prox logo and cart */}
+              <div className="flex items-center justify-between px-2">
+                <img
+                  src="/Icon-01.png"
+                  alt="Prox"
+                  className="h-12 w-auto object-contain"
+                />
+                <button
+                  type="button"
+                  onClick={() => navigate("/cart")}
+                  className="relative flex flex-col items-end"
+                  aria-label="Cart"
+                >
+                  <div className="relative inline-flex items-center justify-center rounded-full bg-prox h-10 w-10 hover:opacity-90 transition">
+                    <ShoppingBag className="h-5 w-5 text-white" />
+                    <span className="absolute -top-2 -right-2 min-w-[18px] h-[18px] px-1 rounded-full bg-black text-white text-[10px] font-bold flex items-center justify-center">
+                      {items.length}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-[11px] font-semibold text-foreground tabular-nums">
+                    ${cartTotal.toFixed(2)}
+                  </div>
+                </button>
               </div>
 
-              {loadingFeatured && (
-                <p className="text-sm text-muted-foreground py-8 text-center">
-                  Loading featured deals…
-                </p>
-              )}
+              {/* Main content card */}
+              <div className="rounded-2xl border border-border/60 bg-white shadow-soft px-6 py-8">
+                <div className="space-y-6">
+                  {/* Title and subtitle */}
+                  <div className="text-center space-y-2">
+                    <h1 className="text-2xl font-bold text-foreground">
+                      Cart Optimizer
+                    </h1>
+                    <p className="text-sm text-muted-foreground">
+                      Find the cheapest combination of stores for your whole cart.
+                    </p>
+                  </div>
 
-              {!loadingFeatured &&
-                FEATURED_CATEGORIES.map((cat) => {
-                  const deals = featuredByCategory[cat.key] || [];
-                  if (deals.length === 0) return null;
-
-                  return (
-                    <div
-                      key={cat.key}
-                      className="space-y-4 rounded-2xl border border-border/50 bg-white shadow-sm px-5 py-6"
-                    >
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-base font-bold text-foreground">{cat.label}</h3>
-                        <span className="text-xs text-muted-foreground font-medium">
-                          {deals.length} picks
-                        </span>
-                      </div>
-
-                      {/* Carousel with arrow controls */}
-                      <div className="relative">
-                        {/* Left Arrow */}
-                        {carouselScrollStates[cat.key]?.showLeft && (
-                          <button
-                            onClick={() => handleCarouselScroll(cat.key, 'left')}
-                            className="absolute left-0 top-1/2 -translate-y-1/2 z-10 h-10 w-10 rounded-full bg-white/95 shadow-lg border border-border/40 flex items-center justify-center hover:bg-white hover:shadow-xl transition-all"
-                            aria-label="Scroll left"
-                          >
-                            <ChevronLeft className="h-5 w-5 text-foreground" />
-                          </button>
-                        )}
-
-                        {/* Right Arrow */}
-                        {carouselScrollStates[cat.key]?.showRight && (
-                          <button
-                            onClick={() => handleCarouselScroll(cat.key, 'right')}
-                            className="absolute right-0 top-1/2 -translate-y-1/2 z-10 h-10 w-10 rounded-full bg-white/95 shadow-lg border border-border/40 flex items-center justify-center hover:bg-white hover:shadow-xl transition-all"
-                            aria-label="Scroll right"
-                          >
-                            <ChevronRight className="h-5 w-5 text-foreground" />
-                          </button>
-                        )}
-
-                        {/* Scrollable carousel */}
-                        <div
-                          ref={(el) => {
-                            carouselRefs.current[cat.key] = el;
-                          }}
-                          onScroll={() => checkScrollPosition(cat.key)}
-                          className="flex gap-4 overflow-x-auto pb-3 -mx-2 px-2 scrollbar-hide"
-                          style={{
-                            scrollbarWidth: 'none',
-                            msOverflowStyle: 'none',
-                          }}
+                  {/* Form */}
+                  <div className="space-y-4">
+                    {/* Items input */}
+                    <div className="space-y-2">
+                      <Label
+                        htmlFor="items-input"
+                        className="text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground"
+                      >
+                        1. ENTER ITEMS
+                      </Label>
+                      <Input
+                        id="items-input"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="e.g., milk; chicken"
+                        className="text-sm"
+                      />
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="flex items-center gap-2 text-xs"
+                          onClick={() => toast({ title: "Coming soon", description: "Upload feature coming soon!", duration: 2000 })}
                         >
-                          {deals.map((item, idx) => {
-                          const key = `featured-${cat.key}-${item.product_name}-${item.retailer}-${item.zip_code}-${item.product_price}-${idx}`;
-                          const isAdded = addedItems.has(key);
-
-                          return (
-                            <div
-                              key={key}
-                              className="min-w-[200px] max-w-[200px] flex-shrink-0 rounded-xl border border-border/40 bg-white shadow-sm hover:shadow-md transition-all overflow-hidden"
-                            >
-                              {/* Image area with floating add button */}
-                              <div className="relative">
-                                <img
-                                  src={normalizeImageUrl(item.image_link)}
-                                  alt={item.product_name}
-                                  className="h-40 w-full object-cover bg-gray-50"
-                                  onError={(e) => {
-                                    e.currentTarget.src = PLACEHOLDER_IMG;
-                                  }}
-                                />
-
-                                {/* Floating green + button */}
-                                <div className="absolute top-2 right-2">
-                                  <Button
-                                    size="icon"
-                                    className={`h-10 w-10 rounded-full shadow-lg transition-all ${
-                                      isAdded
-                                        ? "bg-green-600 text-white hover:bg-green-700"
-                                        : "bg-green-600 text-white hover:bg-green-700"
-                                    }`}
-                                    onClick={() => {
-                                      const flashKey = key;
-                                      handleAddDealToCart(item);
-                                      setAddedItems((prev) => new Set(prev).add(flashKey));
-                                      setTimeout(() => {
-                                        setAddedItems((prev) => {
-                                          const next = new Set(prev);
-                                          next.delete(flashKey);
-                                          return next;
-                                        });
-                                      }, 1500);
-                                    }}
-                                  >
-                                    {isAdded ? (
-                                      <Check className="h-5 w-5" />
-                                    ) : (
-                                      <Plus className="h-5 w-5" />
-                                    )}
-                                  </Button>
-                                </div>
-                              </div>
-
-                              {/* Content area */}
-                              <div className="p-3 space-y-1.5">
-                                {/* Product name - max 2 lines */}
-                                <p
-                                  className="text-sm font-medium text-foreground leading-tight"
-                                  style={{
-                                    display: '-webkit-box',
-                                    WebkitLineClamp: 2,
-                                    WebkitBoxOrient: 'vertical',
-                                    overflow: 'hidden',
-                                  }}
-                                >
-                                  {item.product_name}
-                                </p>
-
-                                {/* Size */}
-                                {item.product_size && (
-                                  <p className="text-xs text-muted-foreground">
-                                    Size: {item.product_size}
-                                  </p>
-                                )}
-
-                                {/* Price - most prominent */}
-                                <p className="text-xl font-bold text-green-600">
-                                  ${Number(item.product_price).toFixed(2)}
-                                </p>
-
-                                {/* Retailer */}
-                                <div className="flex items-center gap-2">
-                                  {item.retailer_logo_url && (
-                                    <img
-                                      src={item.retailer_logo_url}
-                                      alt="logo"
-                                      className="h-4 w-auto object-contain"
-                                    />
-                                  )}
-                                  <p className="text-xs text-muted-foreground truncate">
-                                    {item.retailer}
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                        </div>
+                          <Upload className="h-3 w-3" />
+                          Upload
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="flex items-center gap-2 text-xs"
+                          onClick={() => toast({ title: "Coming soon", description: "Scan feature coming soon!", duration: 2000 })}
+                        >
+                          <Camera className="h-3 w-3" />
+                          Scan
+                        </Button>
                       </div>
                     </div>
-                  );
-                })}
+
+                    {/* Location inputs */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label
+                          htmlFor="zip-landing"
+                          className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground"
+                        >
+                          Zip
+                        </Label>
+                        <Input
+                          id="zip-landing"
+                          type="text"
+                          value={zipcode}
+                          onChange={(e) => setZipcode(e.target.value)}
+                          placeholder={effectiveZip}
+                          className="text-sm"
+                          maxLength={5}
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label
+                          htmlFor="radius-landing"
+                          className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground"
+                        >
+                          Radius
+                        </Label>
+                        <Input
+                          id="radius-landing"
+                          type="number"
+                          min="1"
+                          value={radius}
+                          onChange={(e) => setRadius(e.target.value)}
+                          className="text-sm"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Stores dropdown */}
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                        Stores
+                      </Label>
+                      <Select
+                        value={retailerCountLimit}
+                        onValueChange={setRetailerCountLimit}
+                      >
+                        <SelectTrigger className="h-10 text-sm">
+                          <SelectValue placeholder="Stores" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {[1, 2, 3, 4, 5].map((n) => (
+                            <SelectItem key={n} value={n.toString()}>
+                              {n}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Submit button */}
+                    <Button
+                      onClick={submitSearch}
+                      disabled={loading}
+                      className="w-full rounded-full py-3 text-base font-semibold bg-prox text-white hover:bg-prox-hover shadow-sm"
+                    >
+                      {loading ? "Finding..." : "Find the cheapest cart!"}
+                    </Button>
+
+                    {error && (
+                      <div className="text-sm font-medium text-red-600 text-center">
+                        {error}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Footer */}
+                  <p className="text-[10px] text-gray-400 text-center">
+                    Prices reflect the most recent weekly update.
+                  </p>
+                </div>
+              </div>
             </div>
           )}
 
@@ -2467,6 +2215,157 @@ export function CartFinder() {
           {/* Multi-item mode */}
           {initialSearchDone && editableCartItems.length > 1 && (
             <div className="space-y-6">
+              {/* Store Map - Only show when Stores=1 and we have results */}
+              {singleStoreResults.length > 0 && retailerCountLimit === "1" && !loading && (
+                (() => {
+                  // Derive top 5 stores for map markers
+                  const topStores = singleStoreResults.slice(0, 5);
+
+                  // Create map marker data with jittered coordinates
+                  const mapPoints: MapStorePoint[] = topStores.map((store, idx) => {
+                    // Generate jittered coordinates if we have a centroid
+                    let lat: number | undefined;
+                    let lng: number | undefined;
+
+                    if (zipCentroid) {
+                      // Use retailer + zip as seed for deterministic jitter
+                      const seed = `${store.retailer}@${store.zip_code}`;
+                      const jittered = getJitteredCoordinates(zipCentroid, seed, idx);
+                      lat = jittered.lat;
+                      lng = jittered.lng;
+                    }
+
+                    return {
+                      idx,
+                      labelNumber: idx + 1,
+                      retailer: store.retailer,
+                      zip_code: store.zip_code,
+                      total: store.total_cart_price,
+                      distance_m: store.distance_m,
+                      retailer_logo_url: store.retailer_logo_url,
+                      lat,
+                      lng,
+                    };
+                  });
+
+                  const handleMarkerClick = (idx: number) => {
+                    setSelectedStoreIndex(idx);
+                    // Scroll to the corresponding store row
+                    const rowEl = document.getElementById(`single-store-row-${idx}`);
+                    if (rowEl) {
+                      rowEl.scrollIntoView({ behavior: "smooth", block: "center" });
+                    }
+                  };
+
+                  // Check if we have coordinates for markers
+                  const hasCoordinates = zipCentroid !== null && !zipCentroidError;
+                  const markerPoints = mapPoints
+                    .filter(p => p.lat != null && p.lng != null)
+                    .map(p => ({ lat: p.lat!, lng: p.lng! }));
+
+                  return (
+                    <div className="relative z-0 rounded-2xl border border-border/60 bg-card shadow-soft overflow-hidden">
+                      {/* Real Leaflet Map */}
+                      {hasCoordinates && zipCentroid ? (
+                        <div className="relative z-0">
+                          <MapContainer
+                            center={[zipCentroid.lat, zipCentroid.lng]}
+                            zoom={13}
+                            style={{ height: "220px", width: "100%" }}
+                            scrollWheelZoom={false}
+                            zoomControl={true}
+                          >
+                            <TileLayer
+                              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                            />
+                            <FitBoundsToMarkers points={markerPoints} />
+                            {mapPoints.map((point) => {
+                              if (point.lat == null || point.lng == null) return null;
+                              return (
+                                <Marker
+                                  key={point.idx}
+                                  position={[point.lat, point.lng]}
+                                  icon={createStoreMarkerIcon(
+                                    point.labelNumber,
+                                    point.total,
+                                    selectedStoreIndex === point.idx
+                                  )}
+                                  eventHandlers={{
+                                    click: () => handleMarkerClick(point.idx),
+                                  }}
+                                />
+                              );
+                            })}
+                          </MapContainer>
+                          {/* Caption below map */}
+                          <div className="bg-white/95 px-3 py-2 border-t border-border/60">
+                            <p className="text-xs text-muted-foreground text-center">
+                              {topStores.length} stores nearby · Tap a marker to see details
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        /* Fallback when zip centroid unavailable */
+                        <div className="relative bg-gradient-to-br from-gray-50 to-gray-100 p-4" style={{ minHeight: "180px" }}>
+                          {zipCentroidLoading ? (
+                            <div className="flex flex-col items-center justify-center h-full py-8">
+                              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-prox mb-3"></div>
+                              <p className="text-sm text-muted-foreground">Loading map...</p>
+                            </div>
+                          ) : (
+                            <>
+                              {/* Error message */}
+                              <div className="text-center mb-4">
+                                <p className="text-sm text-muted-foreground">
+                                  Map unavailable — couldn't resolve zip location.
+                                </p>
+                              </div>
+                              {/* Fallback: Simple marker summary row */}
+                              <div className="flex items-stretch justify-between gap-2">
+                                {mapPoints.map((point) => (
+                                  <button
+                                    key={point.idx}
+                                    type="button"
+                                    onClick={() => handleMarkerClick(point.idx)}
+                                    className={`
+                                      flex-1 flex flex-col items-center p-3 rounded-xl transition-all
+                                      ${selectedStoreIndex === point.idx
+                                        ? "bg-prox text-white shadow-lg scale-105 ring-2 ring-prox ring-offset-2"
+                                        : "bg-white/90 hover:bg-white hover:shadow-md text-gray-800"
+                                      }
+                                    `}
+                                  >
+                                    <div
+                                      className={`
+                                        h-7 w-7 rounded-full flex items-center justify-center font-bold text-sm mb-1
+                                        ${selectedStoreIndex === point.idx ? "bg-white text-prox" : "bg-prox text-white"}
+                                      `}
+                                    >
+                                      {point.labelNumber}
+                                    </div>
+                                    <div
+                                      className={`text-sm font-bold ${selectedStoreIndex === point.idx ? "text-white" : "text-green-600"}`}
+                                    >
+                                      ${point.total.toFixed(2)}
+                                    </div>
+                                    <span
+                                      className={`text-[9px] ${selectedStoreIndex === point.idx ? "text-white/70" : "text-gray-400"}`}
+                                    >
+                                      {formatDistance(point.distance_m)}
+                                    </span>
+                                  </button>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()
+              )}
+
               {singleStoreResults.length > 0 && !loading && (
                 <div className="space-y-3 rounded-2xl border border-border/60 bg-card shadow-soft px-4 py-5">
                   <div className="flex items-center justify-between">
@@ -2477,17 +2376,39 @@ export function CartFinder() {
                   </div>
 
                   <Accordion type="multiple" className="w-full space-y-2">
-                    {singleStoreResults.map((store) => {
+                    {singleStoreResults.map((store, idx) => {
                       const storeId = `${store.retailer}@${store.zip_code}`;
+                      const isSelected = retailerCountLimit === "1" && idx === selectedStoreIndex;
                       return (
                         <AccordionItem
                           value={storeId}
                           key={storeId}
-                          className="border rounded-lg px-2 bg-white shadow-sm"
+                          id={`single-store-row-${idx}`}
+                          className={`
+                            border rounded-lg px-2 bg-white shadow-sm transition-all
+                            ${isSelected
+                              ? "ring-2 ring-prox ring-offset-1 bg-prox/5"
+                              : ""
+                            }
+                          `}
                         >
                           <AccordionTrigger className="hover:no-underline py-3">
                             <div className="flex items-center justify-between w-full pr-2">
                               <div className="flex items-center gap-2 text-left">
+                                {/* Show number badge when in single-store mode */}
+                                {retailerCountLimit === "1" && (
+                                  <div
+                                    className={`
+                                      h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0
+                                      ${isSelected
+                                        ? "bg-prox text-white"
+                                        : "bg-gray-200 text-gray-600"
+                                      }
+                                    `}
+                                  >
+                                    {idx + 1}
+                                  </div>
+                                )}
                                 {store.retailer_logo_url && (
                                   <img
                                     src={store.retailer_logo_url}
