@@ -23,6 +23,7 @@ import { useGuestStore } from '@/stores/guestStore';
 import { OnboardingZipCode } from '@/pages/OnboardingZipCode';
 import { OnboardingChooseStores } from '@/pages/OnboardingChooseStores';
 import { OnboardingSavingsPreview } from '@/pages/OnboardingSavingsPreview';
+import { SavingsOnboarding } from '@/pages/SavingsOnboarding';
 import { PantryTracker } from '@/pages/pantry-tracker';
 import { Account } from "@/pages/Account";
 import { PersonalInfo } from "@/pages/PersonalInfo";
@@ -103,6 +104,9 @@ function AppRoutes() {
 
       {/* NEW: Root route always goes to /welcome first */}
       <Route path="/" element={<Navigate to="/welcome" replace />} />
+
+      {/* New savings onboarding flow (post-signup / guest) */}
+      <Route path="/onboarding" element={<SavingsOnboarding />} />
 
       {/* Onboarding routes (unchanged) */}
       <Route path="/onboarding/zipcode" element={<OnboardingZipCode />} />

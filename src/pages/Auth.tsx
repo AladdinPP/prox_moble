@@ -19,8 +19,12 @@ export function Auth() {
     }
   }, [user, navigate]);
 
-  const handleSuccess = () => {
+  const handleSignInSuccess = () => {
     navigate('/home');
+  };
+
+  const handleSignUpSuccess = () => {
+    navigate('/onboarding');
   };
 
   const handleSwitchMode = (newMode: 'signin' | 'signup') => {
@@ -32,12 +36,12 @@ export function Auth() {
     <div className="min-h-screen bg-gradient-background flex items-center justify-center p-4">
       {mode === 'signin' ? (
         <SignIn
-          onSuccess={handleSuccess}
+          onSuccess={handleSignInSuccess}
           onSwitchToSignUp={() => handleSwitchMode('signup')}
         />
       ) : (
         <SignUp
-          onSuccess={handleSuccess}
+          onSuccess={handleSignUpSuccess}
           onSwitchToSignIn={() => handleSwitchMode('signin')}
         />
       )}

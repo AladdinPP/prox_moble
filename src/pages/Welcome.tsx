@@ -10,7 +10,7 @@ export function Welcome() {
 
   const handleContinueAsGuest = () => {
     setIsGuest(true);
-    navigate('/home');
+    navigate('/onboarding');
   };
 
   const handleSignUp = () => {
