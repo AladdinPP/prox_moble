@@ -142,7 +142,8 @@ function Step1Intro({ onNext }: { onNext: () => void }) {
 
         {/* Title */}
         <h1 className="text-2xl font-bold text-gray-900 mb-8 text-center">
-          Save Money on Groceries.
+          <span className="block">Save Money on Groceries</span>
+          <span className="block">without coupons!</span>
         </h1>
 
         {/* Feature Cards */}
