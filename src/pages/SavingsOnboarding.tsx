@@ -211,7 +211,7 @@ function Step1Intro({ onNext }: { onNext: () => void }) {
             onClick={onNext}
             className="w-full h-14 text-white font-semibold rounded-full transition-colors bg-prox hover:bg-prox/90"
           >
-            See How Much You'll Save.
+            See How Much You'll Save!!!
           </button>
         </div>
       </div>
@@ -465,7 +465,7 @@ function Step2Savings({ onComplete }: { onComplete: () => void }) {
             onClick={onComplete}
             className="w-full h-14 text-white font-semibold rounded-full transition-colors bg-prox hover:bg-prox/90"
           >
-            See How It Works.
+            Start Saving!
           </button>
         </div>
       </div>
