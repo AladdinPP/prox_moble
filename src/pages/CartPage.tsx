@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCart } from '@/contexts/CartContext';
 import { Button } from '@/components/ui/button';
-import { Search, Trash2, ShoppingBag } from 'lucide-react';
+import { Trash2, ShoppingBag } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { BottomNav } from "@/components/BottomNav";
 
@@ -12,43 +12,62 @@ export function CartPage() {
 
   const manualTotal = items.reduce((sum, item) => sum + (item.price || 0), 0);
 
+  const cartTotal = useMemo(() => {
+    return items.reduce((sum, item) => sum + (item.price || 0), 0);
+  }, [items]);
+
   return (
     <div className="min-h-screen flex flex-col bg-gradient-background text-foreground">
       <div className="flex-1 overflow-y-auto overflow-x-hidden">
         <div className="container mx-auto p-4 pb-32 max-w-4xl">
           {/* Header */}
           <div className="rounded-3xl border border-border/60 bg-card shadow-soft px-5 py-4 mb-6">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              
-              {/* LEFT SIDE */}
-              <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              {/* Left: Logo */}
+              <div className="w-12 flex-shrink-0">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-12 w-12 p-0"
+                  onClick={() => navigate('/cart-finder')}
+                >
+                  <img
+                    src="/Icon-01.png"
+                    alt="Prox Logo"
+                    className="h-12 w-auto object-contain"
+                  />
+                </Button>
+              </div>
 
-                {/* Logo Button + Title */}
-                <div className="flex items-center gap-2">
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    className="-ml-2 h-8 w-8" 
-                    onClick={() => navigate('/cart-finder')}
-                  >
-                    <img 
-                      src="/Icon-01.png" 
-                      alt="Prox Logo" 
-                      className="h-5 w-5 object-contain opacity-80"
-                    />
-                  </Button>
-
-                  <h1 className="text-2xl font-semibold tracking-tight">
-                    My Shopping Carts
-                  </h1>
-                </div>
-
-                {/* Subtitle */}
-                <p className="text-sm text-muted-foreground">
-                  Manage your saved deals and optimized baskets.
+              {/* Center: Title and subtitle */}
+              <div className="flex-1 text-center px-2">
+                <h1 className="text-2xl font-bold text-gray-900">
+                  My Shopping Carts
+                </h1>
+                <p className="text-sm text-gray-600">
+                  Manage your saved deals and optimized carts.
                 </p>
               </div>
 
+              {/* Right: Cart icon with count */}
+              <div className="w-12 flex-shrink-0 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => navigate("/cart")}
+                  className="relative flex flex-col items-end"
+                  aria-label="Cart"
+                >
+                  <div className="relative inline-flex items-center justify-center rounded-full bg-prox h-10 w-10 hover:opacity-90 transition">
+                    <ShoppingBag className="h-5 w-5 text-white" />
+                    <span className="absolute -top-2 -right-2 min-w-[18px] h-[18px] px-1 rounded-full bg-black text-white text-[10px] font-bold flex items-center justify-center">
+                      {items.length}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-[11px] font-semibold text-foreground tabular-nums">
+                    ${cartTotal.toFixed(2)}
+                  </div>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -58,7 +77,7 @@ export function CartPage() {
               <div className="flex justify-between items-center">
                 <h2 className="text-lg font-semibold flex items-center gap-2">
                   <span className="h-2 w-2 rounded-full bg-blue-500"></span>
-                  Manual Cart
+                  Build-a-Cart
                 </h2>
                 <span className="bg-blue-50 text-blue-700 text-xs font-medium px-2.5 py-0.5 rounded-full border border-blue-100">
                   {items.length} Items
@@ -78,7 +97,7 @@ export function CartPage() {
                   <p className="text-gray-400 text-sm mb-4 leading-relaxed">Add items to compare prices across stores and find the best deals!</p>
                   <Button
                     className="w-full rounded-full py-2.5 text-sm font-semibold bg-prox text-white hover:bg-prox-hover shadow-sm sm:w-auto"
-                    onClick={() => navigate('/deal-search')}>
+                    onClick={() => navigate('/deals')}>
                     Browse Deals
                   </Button>
                 </div>
@@ -148,10 +167,10 @@ export function CartPage() {
               <div className="flex justify-between items-center">
                 <h2 className="text-lg font-semibold flex items-center gap-2">
                   <span className="h-2 w-2 rounded-full bg-purple-500"></span>
-                  Saved Carts
+                  Optimized Carts
                 </h2>
                 <span className="bg-purple-50 text-purple-700 text-xs font-medium px-2.5 py-0.5 rounded-full border border-purple-100">
-                  {savedCarts.length} Saved
+                  {savedCarts.length} Carts
                 </span>
               </div>
 
@@ -165,7 +184,7 @@ export function CartPage() {
                     />
                   </div>
                   <p className="text-base font-semibold text-gray-900 mb-4">No optimized carts saved yet</p>
-                  <p className="text-gray-400 text-sm mb-4 leading-relaxed">Save your best optimized baskets for quick re-ordering later!</p>
+                  <p className="text-gray-400 text-sm mb-4 leading-relaxed">Save your best optimized carts for quick re-ordering later!</p>
                   <Button
                     variant="outline"
                     className="w-full rounded-full py-2.5 text-sm font-semibold bg-prox text-white hover:bg-prox-hover shadow-sm sm:w-auto"

@@ -1970,44 +1970,55 @@ export function CartFinder() {
               LANDING SCREEN (Pre-search)
           ============================================================ */}
           {!initialSearchDone && (
-            <div className="space-y-6">
-              {/* Header with Prox logo and cart */}
-              <div className="flex items-center justify-between px-2">
-                <img
-                  src="/Icon-01.png"
-                  alt="Prox"
-                  className="h-12 w-auto object-contain"
-                />
-                <button
-                  type="button"
-                  onClick={() => navigate("/cart")}
-                  className="relative flex flex-col items-end"
-                  aria-label="Cart"
-                >
-                  <div className="relative inline-flex items-center justify-center rounded-full bg-prox h-10 w-10 hover:opacity-90 transition">
-                    <ShoppingBag className="h-5 w-5 text-white" />
-                    <span className="absolute -top-2 -right-2 min-w-[18px] h-[18px] px-1 rounded-full bg-black text-white text-[10px] font-bold flex items-center justify-center">
-                      {items.length}
-                    </span>
+            <div className="space-y-4">
+              {/* Card A: Header only */}
+              <div className="rounded-2xl border border-border/60 bg-white shadow-soft px-5 py-4">
+                {/* Standardized header: Logo (left) | Title (center) | Cart (right) */}
+                <div className="flex items-center justify-between">
+                  {/* Left: Logo */}
+                  <div className="w-12 flex-shrink-0">
+                    <img
+                      src="/Icon-01.png"
+                      alt="Prox"
+                      className="h-12 w-auto object-contain"
+                    />
                   </div>
-                  <div className="mt-1 text-[11px] font-semibold text-foreground tabular-nums">
-                    ${cartTotal.toFixed(2)}
-                  </div>
-                </button>
-              </div>
 
-              {/* Main content card */}
-              <div className="rounded-2xl border border-border/60 bg-white shadow-soft px-6 py-8">
-                <div className="space-y-6">
-                  {/* Title and subtitle */}
-                  <div className="text-center space-y-2">
-                    <h1 className="text-2xl font-bold text-foreground">
+                  {/* Center: Title and subtitle */}
+                  <div className="flex-1 text-center px-2">
+                    <h1 className="text-2xl font-bold text-gray-900">
                       Cart Optimizer
                     </h1>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="text-sm text-gray-600">
                       Find the cheapest combination of stores for your whole cart.
                     </p>
                   </div>
+
+                  {/* Right: Cart button */}
+                  <div className="w-12 flex-shrink-0 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => navigate("/cart")}
+                      className="relative flex flex-col items-end"
+                      aria-label="Cart"
+                    >
+                      <div className="relative inline-flex items-center justify-center rounded-full bg-prox h-10 w-10 hover:opacity-90 transition">
+                        <ShoppingBag className="h-5 w-5 text-white" />
+                        <span className="absolute -top-2 -right-2 min-w-[18px] h-[18px] px-1 rounded-full bg-black text-white text-[10px] font-bold flex items-center justify-center">
+                          {items.length}
+                        </span>
+                      </div>
+                      <div className="mt-1 text-[11px] font-semibold text-foreground tabular-nums">
+                        ${cartTotal.toFixed(2)}
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Card B: Content only */}
+              <div className="rounded-2xl border border-border/60 bg-white shadow-soft px-6 py-6">
+                <div className="space-y-6">
 
                   {/* Form */}
                   <div className="space-y-4">
@@ -2057,7 +2068,7 @@ export function CartFinder() {
                           htmlFor="zip-landing"
                           className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground"
                         >
-                          Zip
+                          Zip Code
                         </Label>
                         <Input
                           id="zip-landing"
@@ -2075,7 +2086,7 @@ export function CartFinder() {
                           htmlFor="radius-landing"
                           className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground"
                         >
-                          Radius
+                          Radius (Miles)
                         </Label>
                         <Input
                           id="radius-landing"

@@ -1332,327 +1332,358 @@ export function Deals() {
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-background text-foreground">
-      {/* STICKY TOP AREA */}
-      <div className="sticky top-0 z-20 bg-prox">
-        <div
-          ref={locationPanelRef}
-          className="mx-auto max-w-3xl px-4 py-3 space-y-3"
-        >
-          {/* Row 1: Search + Cart */}
-          <div className="flex items-start gap-3">
-            <form onSubmit={handleSearch} className="flex-1">
-              <div className="relative">
-                <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-black/50" />
-                <Input
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search for a product..."
-                  className="pl-9 h-10 rounded-full bg-white/95 text-black placeholder:text-black/50 border-0 focus-visible:ring-2 focus-visible:ring-white"
-                />
-              </div>
-            </form>
-
-            <button
-              type="button"
-              onClick={() => navigate("/cart")}
-              className="relative flex flex-col items-end"
-              aria-label="Cart"
-            >
-              <div className="relative inline-flex items-center justify-center rounded-full bg-white/95 h-10 w-10 hover:bg-white transition">
-                <ShoppingBag className="h-5 w-5 text-black" />
-                <span className="absolute -top-2 -right-2 min-w-[18px] h-[18px] px-1 rounded-full bg-black text-white text-[10px] font-bold flex items-center justify-center">
-                  {items.length}
-                </span>
-              </div>
-              <div className="mt-1 text-[11px] font-semibold text-white tabular-nums">
-                ${cartTotal.toFixed(2)}
-              </div>
-            </button>
-          </div>
-
-          {/* Row 2: Zip + Radius + Retailers */}
-          <div className="flex items-center justify-between gap-3">
-            <button
-              type="button"
-              onClick={openLocationPanel}
-              className="flex items-center gap-2 text-sm font-medium text-white hover:opacity-90"
-            >
+      {/* Header Card - not sticky */}
+      <div className="mx-auto w-full max-w-3xl px-4 pt-4">
+        <div className="rounded-2xl border border-border/60 bg-white shadow-soft px-5 py-4">
+          <div className="flex items-center justify-between">
+            {/* Left: Logo */}
+            <div className="w-12 flex-shrink-0">
               <img
-                src="/location 2_white.png"
-                alt=""
-                aria-hidden="true"
-                className="h-4 w-4 object-contain"
+                src="/Icon-01.png"
+                alt="Prox"
+                className="h-12 w-auto object-contain"
               />
-              <span className="text-white/80">Zip:</span>
-              <span className="tabular-nums">{effectiveZip}</span>
-            </button>
+            </div>
 
-            <button
-              type="button"
-              onClick={openLocationPanel}
-              className="flex items-center gap-2 text-sm font-medium text-white hover:opacity-90"
-            >
-              <img
-                src="/radius_white.png"
-                alt=""
-                aria-hidden="true"
-                className="h-4 w-4 object-contain"
-              />
-              <span className="text-white/80">Radius:</span>
-              <span className="tabular-nums">{radius} mi</span>
-              <ChevronDown
-                className={`h-4 w-4 text-white/80 transition-transform ${
-                  locationPanelOpen ? "rotate-180" : ""
-                }`}
-              />
-            </button>
-
-            <RetailersDropdown
-              align="end"
-              compact={false}
-              title="Choose Stores."
-              availableRetailers={availableRetailers}
-              selectedRetailers={selectedRetailers}
-              setSelectedRetailers={setSelectedRetailers}
-              open={retailersOpenRow}
-              setOpen={setRetailersOpenRow}
-            />
-          </div>
-
-          {/* Drop-down panel */}
-          {locationPanelOpen && (
-            <div className="rounded-2xl border border-border/60 bg-card shadow-soft p-4">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold">Update search settings</p>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setLocationPanelOpen(false)}
-                >
-                  Close
-                </Button>
-              </div>
-
-              <div className="mt-3 grid grid-cols-3 gap-3">
-                <div className="flex flex-col gap-1.5">
-                  <Label
-                    htmlFor="zip-panel"
-                    className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground"
-                  >
-                    Zip
-                  </Label>
-                  <Input
-                    id="zip-panel"
-                    type="text"
-                    value={zipcode}
-                    onChange={(e) => setZipcode(e.target.value)}
-                    placeholder={effectiveZip}
-                    className="text-sm"
-                    maxLength={5}
-                  />
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <Label
-                    htmlFor="radius-panel"
-                    className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground"
-                  >
-                    Miles
-                  </Label>
-                  <Input
-                    id="radius-panel"
-                    type="number"
-                    min="1"
-                    value={radius}
-                    onChange={(e) => setRadius(e.target.value)}
-                    className="text-sm"
-                  />
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                    Retailers
-                  </Label>
-
-                  <RetailersDropdown
-                    align="start"
-                    compact
-                    title="Choose Stores."
-                    availableRetailers={availableRetailers}
-                    selectedRetailers={selectedRetailers}
-                    setSelectedRetailers={setSelectedRetailers}
-                    open={retailersOpenPanel}
-                    setOpen={setRetailersOpenPanel}
-                  />
-                </div>
-              </div>
-
-              <Button
-                onClick={initialSearchDone ? handleReRunSearch : refreshFeatured}
-                disabled={loading || loadingFeatured}
-                className="mt-4 w-full rounded-full py-2.5 text-sm font-semibold bg-prox text-white hover:bg-prox-hover shadow-sm"
-              >
-                {loading || loadingFeatured ? "Searching..." : initialSearchDone ? "Search deals" : "Refresh deals"}
-              </Button>
-
-              {error && (
-                <div className="mt-2 text-xs font-medium text-red-600">{error}</div>
-              )}
-
-              <p className="mt-2 text-[10px] text-gray-400 text-right">
-                Prices reflect the most recent weekly update.
+            {/* Center: Title and subtitle */}
+            <div className="flex-1 text-center px-2">
+              <h1 className="text-2xl font-bold text-gray-900">
+                Deals
+              </h1>
+              <p className="text-sm text-gray-600">
+                Browse the best deals at retailers near you
               </p>
             </div>
-          )}
 
-          {/* Refine Search */}
-          {initialSearchDone && editableCartItems.length >= 1 && (
-            <div className="rounded-2xl border border-border/60 bg-white shadow-soft px-4 py-4">
+            {/* Right: Cart icon with count */}
+            <div className="w-12 flex-shrink-0 flex justify-end">
               <button
                 type="button"
-                onClick={() => setRefineOpen((v) => !v)}
-                className="w-full flex items-center justify-between"
+                onClick={() => navigate("/cart")}
+                className="relative flex flex-col items-end"
+                aria-label="Cart"
               >
-                <h2 className="text-lg font-semibold text-foreground">Refine search</h2>
-                <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-                  <span className="text-xs">{refineOpen ? "Hide" : "Show"}</span>
-                </span>
+                <div className="relative inline-flex items-center justify-center rounded-full bg-prox h-10 w-10 hover:opacity-90 transition">
+                  <ShoppingBag className="h-5 w-5 text-white" />
+                  <span className="absolute -top-2 -right-2 min-w-[18px] h-[18px] px-1 rounded-full bg-black text-white text-[10px] font-bold flex items-center justify-center">
+                    {items.length}
+                  </span>
+                </div>
+                <div className="mt-1 text-[11px] font-semibold text-foreground tabular-nums">
+                  ${cartTotal.toFixed(2)}
+                </div>
               </button>
+            </div>
+          </div>
+        </div>
+      </div>
 
-              {refineOpen && (
-                <div className="mt-3 space-y-3">
-                  <div className="flex flex-col gap-2">
-                    <div className="grid grid-cols-4 gap-2 text-sm font-semibold text-gray-600">
-                      <span>Name</span>
-                      <span>Brand</span>
-                      <span>Size</span>
-                      <span>Details</span>
+      {/* Sticky Search Area - sticks at top while scrolling */}
+      <div className="sticky top-0 z-40 w-full">
+        <div className="mx-auto w-full max-w-3xl px-4 pt-4">
+          <div className="w-full rounded-2xl bg-prox shadow-soft ring-1 ring-black/5 py-4 space-y-3">
+            <div
+              ref={locationPanelRef}
+              className="px-4 space-y-3"
+            >
+              {/* Row 1: Search */}
+              <form onSubmit={handleSearch} className="w-full">
+                <div className="relative">
+                  <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-black/50" />
+                  <Input
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search for a product..."
+                    className="pl-9 h-10 rounded-full bg-white/95 text-black placeholder:text-black/50 border-0 focus-visible:ring-2 focus-visible:ring-white"
+                  />
+                </div>
+              </form>
+
+              {/* Row 2: Zip + Radius + Retailers */}
+              <div className="flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={openLocationPanel}
+                  className="flex items-center gap-2 text-sm font-medium text-white hover:opacity-90"
+                >
+                  <img
+                    src="/location 2_white.png"
+                    alt=""
+                    aria-hidden="true"
+                    className="h-4 w-4 object-contain"
+                  />
+                  <span className="text-white/80">Zip:</span>
+                  <span className="tabular-nums">{effectiveZip}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={openLocationPanel}
+                  className="flex items-center gap-2 text-sm font-medium text-white hover:opacity-90"
+                >
+                  <img
+                    src="/radius_white.png"
+                    alt=""
+                    aria-hidden="true"
+                    className="h-4 w-4 object-contain"
+                  />
+                  <span className="text-white/80">Radius:</span>
+                  <span className="tabular-nums">{radius} mi</span>
+                  <ChevronDown
+                    className={`h-4 w-4 text-white/80 transition-transform ${
+                      locationPanelOpen ? "rotate-180" : ""
+                    }`}
+                  />
+                </button>
+
+                <RetailersDropdown
+                  align="end"
+                  compact={false}
+                  title="Choose Stores."
+                  availableRetailers={availableRetailers}
+                  selectedRetailers={selectedRetailers}
+                  setSelectedRetailers={setSelectedRetailers}
+                  open={retailersOpenRow}
+                  setOpen={setRetailersOpenRow}
+                />
+              </div>
+
+              {/* Drop-down panel */}
+              {locationPanelOpen && (
+                <div className="rounded-2xl border border-border/60 bg-card shadow-soft p-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold">Update search settings</p>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setLocationPanelOpen(false)}
+                    >
+                      Close
+                    </Button>
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-3 gap-3">
+                    <div className="flex flex-col gap-1.5">
+                      <Label
+                        htmlFor="zip-panel"
+                        className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground"
+                      >
+                        Zip
+                      </Label>
+                      <Input
+                        id="zip-panel"
+                        type="text"
+                        value={zipcode}
+                        onChange={(e) => setZipcode(e.target.value)}
+                        placeholder={effectiveZip}
+                        className="text-sm"
+                        maxLength={5}
+                      />
                     </div>
 
-                    {editableCartItems.map((item, idx) => {
-                      const opts =
-                        refineOptionsByName.get(item.name) || {
-                          brands: [],
-                          sizes: [],
-                          details: [],
-                        };
+                    <div className="flex flex-col gap-1.5">
+                      <Label
+                        htmlFor="radius-panel"
+                        className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground"
+                      >
+                        Miles
+                      </Label>
+                      <Input
+                        id="radius-panel"
+                        type="number"
+                        min="1"
+                        value={radius}
+                        onChange={(e) => setRadius(e.target.value)}
+                        className="text-sm"
+                      />
+                    </div>
 
-                      const sel = refineSelected[idx] || {
-                        brands: new Set<string>(),
-                        sizes: new Set<string>(),
-                        details: new Set<string>(),
-                      };
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                        Retailers
+                      </Label>
 
-                      const keyBrand = `refine-${idx}-brand`;
-                      const keySize = `refine-${idx}-size`;
-                      const keyDetails = `refine-${idx}-details`;
-
-                      return (
-                        <div key={idx} className="grid grid-cols-4 gap-2">
-                          <Input
-                            value={item.name}
-                            onChange={(e) =>
-                              handleEditCartItem(idx, "name", e.target.value)
-                            }
-                            className="text-xs px-2 h-8"
-                          />
-
-                          <MultiSelectDropdown
-                            title="Choose Brand(s)"
-                            buttonLabel="Brand"
-                            options={opts.brands}
-                            selected={sel.brands}
-                            setSelected={(updater) =>
-                              setRefineSelected((prev) => {
-                                const next = [...prev];
-                                const curr = next[idx] || {
-                                  brands: new Set<string>(),
-                                  sizes: new Set<string>(),
-                                  details: new Set<string>(),
-                                };
-                                const newBrands =
-                                  typeof updater === "function"
-                                    ? updater(curr.brands)
-                                    : updater;
-                                next[idx] = { ...curr, brands: newBrands };
-                                return next;
-                              })
-                            }
-                            open={!!refineDropdownOpen[keyBrand]}
-                            setOpen={(v) => setRefineOpenKey(keyBrand, v)}
-                            align="start"
-                            compact
-                          />
-
-                          <MultiSelectDropdown
-                            title="Choose Size(s)"
-                            buttonLabel="Size"
-                            options={opts.sizes}
-                            selected={sel.sizes}
-                            setSelected={(updater) =>
-                              setRefineSelected((prev) => {
-                                const next = [...prev];
-                                const curr = next[idx] || {
-                                  brands: new Set<string>(),
-                                  sizes: new Set<string>(),
-                                  details: new Set<string>(),
-                                };
-                                const newSizes =
-                                  typeof updater === "function"
-                                    ? updater(curr.sizes)
-                                    : updater;
-                                next[idx] = { ...curr, sizes: newSizes };
-                                return next;
-                              })
-                            }
-                            open={!!refineDropdownOpen[keySize]}
-                            setOpen={(v) => setRefineOpenKey(keySize, v)}
-                            align="start"
-                            compact
-                          />
-
-                          <MultiSelectDropdown
-                            title="Choose Detail(s)"
-                            buttonLabel="Details"
-                            options={opts.details}
-                            selected={sel.details}
-                            setSelected={(updater) =>
-                              setRefineSelected((prev) => {
-                                const next = [...prev];
-                                const curr = next[idx] || {
-                                  brands: new Set<string>(),
-                                  sizes: new Set<string>(),
-                                  details: new Set<string>(),
-                                };
-                                const newDetails =
-                                  typeof updater === "function"
-                                    ? updater(curr.details)
-                                    : updater;
-                                next[idx] = { ...curr, details: newDetails };
-                                return next;
-                              })
-                            }
-                            open={!!refineDropdownOpen[keyDetails]}
-                            setOpen={(v) => setRefineOpenKey(keyDetails, v)}
-                            align="start"
-                            compact
-                          />
-                        </div>
-                      );
-                    })}
+                      <RetailersDropdown
+                        align="start"
+                        compact
+                        title="Choose Stores."
+                        availableRetailers={availableRetailers}
+                        selectedRetailers={selectedRetailers}
+                        setSelectedRetailers={setSelectedRetailers}
+                        open={retailersOpenPanel}
+                        setOpen={setRetailersOpenPanel}
+                      />
+                    </div>
                   </div>
 
                   <Button
-                    onClick={handleReRunSearch}
-                    disabled={loading}
-                    className="w-full rounded-full py-2.5 text-sm font-semibold bg-prox text-white hover:bg-prox-hover shadow-sm"
+                    onClick={initialSearchDone ? handleReRunSearch : refreshFeatured}
+                    disabled={loading || loadingFeatured}
+                    className="mt-4 w-full rounded-full py-2.5 text-sm font-semibold bg-prox text-white hover:bg-prox-hover shadow-sm"
                   >
-                    {loading ? "Searching…" : "Re-run search"}
+                    {loading || loadingFeatured ? "Searching..." : initialSearchDone ? "Search deals" : "Refresh deals"}
                   </Button>
+
+                  {error && (
+                    <div className="mt-2 text-xs font-medium text-red-600">{error}</div>
+                  )}
+
+                  <p className="mt-2 text-[10px] text-gray-400 text-right">
+                    Prices reflect the most recent weekly update.
+                  </p>
+                </div>
+              )}
+
+              {/* Refine Search */}
+              {initialSearchDone && editableCartItems.length >= 1 && (
+                <div className="rounded-2xl border border-border/60 bg-white shadow-soft px-4 py-4">
+                  <button
+                    type="button"
+                    onClick={() => setRefineOpen((v) => !v)}
+                    className="w-full flex items-center justify-between"
+                  >
+                    <h2 className="text-lg font-semibold text-foreground">Refine search</h2>
+                    <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                      <span className="text-xs">{refineOpen ? "Hide" : "Show"}</span>
+                    </span>
+                  </button>
+
+                  {refineOpen && (
+                    <div className="mt-3 space-y-3">
+                      <div className="flex flex-col gap-2">
+                        <div className="grid grid-cols-4 gap-2 text-sm font-semibold text-gray-600">
+                          <span>Name</span>
+                          <span>Brand</span>
+                          <span>Size</span>
+                          <span>Details</span>
+                        </div>
+
+                        {editableCartItems.map((item, idx) => {
+                          const opts =
+                            refineOptionsByName.get(item.name) || {
+                              brands: [],
+                              sizes: [],
+                              details: [],
+                            };
+
+                          const sel = refineSelected[idx] || {
+                            brands: new Set<string>(),
+                            sizes: new Set<string>(),
+                            details: new Set<string>(),
+                          };
+
+                          const keyBrand = `refine-${idx}-brand`;
+                          const keySize = `refine-${idx}-size`;
+                          const keyDetails = `refine-${idx}-details`;
+
+                          return (
+                            <div key={idx} className="grid grid-cols-4 gap-2">
+                              <Input
+                                value={item.name}
+                                onChange={(e) =>
+                                  handleEditCartItem(idx, "name", e.target.value)
+                                }
+                                className="text-xs px-2 h-8"
+                              />
+
+                              <MultiSelectDropdown
+                                title="Choose Brand(s)"
+                                buttonLabel="Brand"
+                                options={opts.brands}
+                                selected={sel.brands}
+                                setSelected={(updater) =>
+                                  setRefineSelected((prev) => {
+                                    const next = [...prev];
+                                    const curr = next[idx] || {
+                                      brands: new Set<string>(),
+                                      sizes: new Set<string>(),
+                                      details: new Set<string>(),
+                                    };
+                                    const newBrands =
+                                      typeof updater === "function"
+                                        ? updater(curr.brands)
+                                        : updater;
+                                    next[idx] = { ...curr, brands: newBrands };
+                                    return next;
+                                  })
+                                }
+                                open={!!refineDropdownOpen[keyBrand]}
+                                setOpen={(v) => setRefineOpenKey(keyBrand, v)}
+                                align="start"
+                                compact
+                              />
+
+                              <MultiSelectDropdown
+                                title="Choose Size(s)"
+                                buttonLabel="Size"
+                                options={opts.sizes}
+                                selected={sel.sizes}
+                                setSelected={(updater) =>
+                                  setRefineSelected((prev) => {
+                                    const next = [...prev];
+                                    const curr = next[idx] || {
+                                      brands: new Set<string>(),
+                                      sizes: new Set<string>(),
+                                      details: new Set<string>(),
+                                    };
+                                    const newSizes =
+                                      typeof updater === "function"
+                                        ? updater(curr.sizes)
+                                        : updater;
+                                    next[idx] = { ...curr, sizes: newSizes };
+                                    return next;
+                                  })
+                                }
+                                open={!!refineDropdownOpen[keySize]}
+                                setOpen={(v) => setRefineOpenKey(keySize, v)}
+                                align="start"
+                                compact
+                              />
+
+                              <MultiSelectDropdown
+                                title="Choose Detail(s)"
+                                buttonLabel="Details"
+                                options={opts.details}
+                                selected={sel.details}
+                                setSelected={(updater) =>
+                                  setRefineSelected((prev) => {
+                                    const next = [...prev];
+                                    const curr = next[idx] || {
+                                      brands: new Set<string>(),
+                                      sizes: new Set<string>(),
+                                      details: new Set<string>(),
+                                    };
+                                    const newDetails =
+                                      typeof updater === "function"
+                                        ? updater(curr.details)
+                                        : updater;
+                                    next[idx] = { ...curr, details: newDetails };
+                                    return next;
+                                  })
+                                }
+                                open={!!refineDropdownOpen[keyDetails]}
+                                setOpen={(v) => setRefineOpenKey(keyDetails, v)}
+                                align="start"
+                                compact
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <Button
+                        onClick={handleReRunSearch}
+                        disabled={loading}
+                        className="w-full rounded-full py-2.5 text-sm font-semibold bg-prox text-white hover:bg-prox-hover shadow-sm"
+                      >
+                        {loading ? "Searching…" : "Re-run search"}
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
-          )}
+          </div>
         </div>
       </div>
 

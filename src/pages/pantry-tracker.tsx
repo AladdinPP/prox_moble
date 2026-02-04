@@ -464,89 +464,140 @@ export function PantryTracker() {
   const hasAnyItems = filteredItems.length > 0;
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-background">
-      <div className="flex-1 pb-24">
-        {/* Header */}
-        <div className="bg-card/95 backdrop-blur-sm border-b border-border/50 sticky top-0 z-10">
-          <div className={`mx-auto px-4 py-4 ${isMobile ? 'px-3 py-3' : 'max-w-4xl'}`}>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center space-x-3">
-                <div className={`rounded-prox overflow-hidden ${isMobile ? 'w-8 h-8' : 'w-10 h-10'}`}>
-                  <img
-                    src="/Icon-01.png"
-                    alt="Prox Logo"
-                    className={`object-cover object-center transform translate-x-[5%] translate-y-[-25%] ${isMobile ? 'w-16 h-16' : 'w-20 h-20'}`}
-                  />
-                </div>
-                <div>
-                  <h1 className={`font-semibold text-foreground font-primary ${isMobile ? 'text-lg' : 'text-xl'}`}>
-                    {isGuest ? 'Guest Mode' : `Hello, ${user?.user_metadata?.first_name || 'there'}!`}
-                  </h1>
-                  <p className={`text-muted-foreground font-secondary ${isMobile ? 'text-xs' : 'text-sm'}`}>
-                    {items.length} items in your pantry
-                  </p>
-                </div>
-              </div>
+    <div className="min-h-screen flex flex-col bg-gradient-background text-foreground">
 
-              <div className="flex items-center space-x-2">
-                <Button variant="ghost" size="icon" onClick={() => navigate('/expiring-soon')} className={`relative ${isMobile ? 'h-8 w-8' : 'h-10 w-10'}`}>
-                  <Bell className={`${isMobile ? 'h-4 w-4' : 'h-5 w-5'}`} />
-                </Button>
-
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className={`relative ${isMobile ? 'h-8 w-8' : 'h-10 w-10'}`}>
-                      <Settings className={`${isMobile ? 'h-4 w-4' : 'h-5 w-5'}`} />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48">
-                    <DropdownMenuItem onClick={() => navigate('/home/settings')} className="flex items-center space-x-2 cursor-pointer hover:bg-accent/10 focus:bg-accent/10">
-                      <Settings className="h-4 w-4 text-accent" />
-                      <span className="font-secondary text-sm">Settings</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => navigate('/home/households')} className="flex items-center space-x-2 cursor-pointer hover:bg-accent/10 focus:bg-accent/10">
-                      <Building2 className="h-4 w-4 text-accent" />
-                      <span className="font-secondary text-sm">Households</span>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-
-                <Button variant="ghost" onClick={handleSignOut} className={`font-secondary ${isMobile ? 'text-xs px-2' : 'text-sm'}`}>
-                  {isGuest ? 'Sign In' : 'Sign Out'}
-                </Button>
-              </div>
+      {/* Header Card (NOT sticky) */}
+      <div className="mx-auto max-w-3xl w-full px-4 pt-4">
+        <div className="rounded-2xl border border-border/60 bg-white shadow-soft px-5 py-4">
+          <div className="flex items-center justify-between">
+            {/* Left: Logo */}
+            <div className="w-12 flex-shrink-0">
+              <img
+                src="/Icon-01.png"
+                alt="Prox Logo"
+                className="h-12 w-auto object-contain"
+              />
             </div>
 
+            {/* Center: Title and subtitle */}
+            <div className="flex-1 text-center px-2">
+              <h1 className="text-2xl font-bold text-gray-900">
+                Pantry
+              </h1>
+              <p className="text-sm text-gray-600">
+                Track items in your pantry
+              </p>
+            </div>
+
+            {/* Right: Actions */}
+            <div className="flex items-center space-x-1 flex-shrink-0">
+              <Button variant="ghost" size="icon" onClick={() => navigate('/expiring-soon')} className="h-10 w-10">
+                <Bell className="h-5 w-5" />
+              </Button>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-10 w-10">
+                    <Settings className="h-5 w-5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem onClick={() => navigate('/home/settings')} className="flex items-center space-x-2 cursor-pointer hover:bg-accent/10 focus:bg-accent/10">
+                    <Settings className="h-4 w-4 text-accent" />
+                    <span className="font-secondary text-sm">Settings</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate('/home/households')} className="flex items-center space-x-2 cursor-pointer hover:bg-accent/10 focus:bg-accent/10">
+                    <Building2 className="h-4 w-4 text-accent" />
+                    <span className="font-secondary text-sm">Households</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <Button variant="ghost" onClick={handleSignOut} className="font-secondary text-sm">
+                {isGuest ? 'Sign In' : 'Sign Out'}
+              </Button>
+            </div>
+          </div>
+
+          {/* Secondary info row */}
+          <div className="mt-3 pt-3 border-t border-border/60">
+            <div className="flex items-center">
+              {/* Left spacer (matches logo column width) */}
+              <div className="w-12 flex-shrink-0" />
+
+              {/* Centered secondary text */}
+              <div className="flex-1 text-center">
+                <span className="font-medium text-sm text-gray-600">
+                  {isGuest ? "Guest Mode" : `Hello, ${user?.user_metadata?.first_name || "there"}!`}
+                </span>
+                <span className="mx-3 text-gray-400">•</span>
+                <span className="text-sm text-gray-600">{items.length} items</span>
+              </div>
+
+              {/* Right spacer (matches actions column width-ish) */}
+              <div className="w-[120px] flex-shrink-0" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Sticky Search/Filter Card (sticky ONLY here) */}
+      <div className="sticky top-4 z-40 mt-2">
+        <div className="mx-auto max-w-3xl w-full px-4">
+          <div className="rounded-2xl border border-border/60 bg-prox shadow-soft px-4 py-3 space-y-3">
             {/* Search and Filter */}
-            <div className={`flex items-center space-x-2 mb-4 ${isMobile ? 'space-x-1' : ''}`}>
+            <div className="flex items-center space-x-2">
               <div className="relative flex-1">
-                <Search className={`absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground ${isMobile ? 'h-3 w-3' : 'h-4 w-4'}`} />
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                 <Input
                   placeholder="Search items..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className={`pl-10 font-secondary ${isMobile ? 'h-8 text-sm' : 'h-10'}`}
+                  className="pl-10 font-secondary h-10"
                 />
               </div>
 
-              <Button variant="outline" size="icon" className={`${isMobile ? 'h-8 w-8' : 'h-10 w-10'}`}>
-                <Filter className={`${isMobile ? 'h-3 w-3' : 'h-4 w-4'}`} />
+              <Button variant="outline" size="icon" className="h-10 w-10">
+                <Filter className="h-4 w-4" />
               </Button>
 
-              <Button variant="outline" onClick={() => navigate('/deals')} className={`font-secondary whitespace-nowrap ${isMobile ? 'h-8 text-xs px-2' : 'h-10'}`}>
+              <Button variant="outline" onClick={() => navigate('/deals')} className="font-secondary whitespace-nowrap h-10">
                 Find Deals
               </Button>
             </div>
 
             {/* Category Filter */}
-            <div className={`flex overflow-x-auto pb-2 ${isMobile ? 'space-x-1' : 'space-x-2'}`}>
+            <div className="flex overflow-x-auto pb-1 space-x-2">
               {allCategories.map((category) => (
                 <Button
-                  key={category}
-                  variant={selectedCategory === category ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setSelectedCategory(category)}
-                  className={`whitespace-nowrap ${isMobile ? 'text-xs px-2 py-1' : ''}`}
+                    key={category}
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSelectedCategory(category)}
+                    className={[
+                      "whitespace-nowrap",
+                      "bg-background text-foreground border-border",
+                      "hover:bg-prox hover:text-white hover:border-prox",
+                      "active:bg-prox active:text-white",
+                      selectedCategory === category
+                        ? "bg-prox text-white border-prox hover:bg-prox hover:text-white"
+                        : "",
+                    ].join(" ")}
+                    // key={category}
+                    // variant="outline"
+                    // size="sm"
+                    // onClick={() => setSelectedCategory(category)}
+                    // className={[
+                    //   "whitespace-nowrap",
+                    //   selectedCategory === category
+                    //     ? "bg-background text-foreground border-gray-500/40 hover:bg-gray-500/50"
+                    //     : "bg-transparent",
+                    // ].join(" ")}
+                  // key={category}
+                  // variant={selectedCategory === category ? "default" : "outline"}
+                  // size="sm"
+                  // onClick={() => setSelectedCategory(category)}
+                  // className="whitespace-nowrap"
                 >
                   {category}
                 </Button>
@@ -556,20 +607,20 @@ export function PantryTracker() {
             </div>
 
             {!isGuest && (
-              <div className="mt-4">
-                <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'my-items' | 'household-items')}>
-                  <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="my-items">My Items</TabsTrigger>
-                    <TabsTrigger value="household-items">Household Items</TabsTrigger>
-                  </TabsList>
-                </Tabs>
-              </div>
+              <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'my-items' | 'household-items')}>
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="my-items">My Items</TabsTrigger>
+                  <TabsTrigger value="household-items">Household Items</TabsTrigger>
+                </TabsList>
+              </Tabs>
             )}
           </div>
         </div>
+      </div>
 
-        {/* Main */}
-        <div className={`mx-auto px-4 py-6 ${isMobile ? 'px-3 py-4' : 'max-w-4xl'}`}>
+      {/* Rest of page content (lists/cards) scroll normally */}
+      <div className="flex-1 pb-24">
+        <div className="mx-auto max-w-3xl w-full px-4 py-6">
           {currentLoading ? (
             <div className="text-center py-8">
               <p className="text-muted-foreground">Loading items...</p>
