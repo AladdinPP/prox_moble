@@ -12,6 +12,7 @@ import { CartProvider } from '@/contexts/CartContext';
 import { Toaster } from '@/components/ui/toaster';
 import { Welcome } from '@/pages/Welcome';
 import { Auth } from '@/pages/Auth';
+import { ResetPassword } from '@/pages/ResetPassword';
 import { AddItem } from '@/pages/AddItem';
 import { ExpiringSoon } from '@/pages/ExpiringSoon';
 import { DealSearch } from '@/pages/DealSearch';
@@ -80,6 +81,7 @@ function AppRoutes() {
       {/* Public / auth routes */}
       <Route path="/welcome" element={<Welcome />} />
       <Route path="/auth" element={<Auth />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/pantry-tracker/edit/:id" element={<EditPantryItem />} />
 
       {/* NEW: /home now shows the Cart Finder experience */}

@@ -3,6 +3,25 @@ import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { useGuestStore } from '@/stores/guestStore';
 
+export interface WaitlistCheckResult {
+  status: 'legacy_waitlist' | 'has_account' | 'new_user';
+  message: string;
+  existing_data?: {
+    first_name?: string;
+    last_name?: string;
+    zip_code?: string;
+    phone_number?: string;
+    preferred_retailers?: string[];
+    date_of_birth?: string;
+  };
+}
+
+export interface ForgotPasswordResult {
+  error: any;
+  /** If the email belongs to a waitlist-only user (no auth account) */
+  isWaitlistOnly?: boolean;
+}
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
@@ -10,6 +29,9 @@ interface AuthContextType {
   signUp: (email: string, password: string, userData: any) => Promise<{ error: any }>;
   signIn: (email: string, password: string) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
+  checkWaitlistEmail: (email: string) => Promise<WaitlistCheckResult>;
+  forgotPassword: (email: string) => Promise<ForgotPasswordResult>;
+  resetPassword: (newPassword: string) => Promise<{ error: any }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -60,7 +82,94 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe();
   }, [setIsGuest]);
 
-  
+  /**
+   * Check whether an email belongs to a legacy waitlist user, an existing
+   * auth user, or is completely new.
+   */
+  const checkWaitlistEmail = async (email: string): Promise<WaitlistCheckResult> => {
+    try {
+      const { data, error } = await supabase.rpc('check_waitlist_email', {
+        lookup_email: email,
+      });
+
+      if (error) {
+        console.error('Error checking waitlist email:', error);
+        return { status: 'new_user', message: 'Ready to create account.' };
+      }
+
+      return data as WaitlistCheckResult;
+    } catch (e) {
+      console.error('Unexpected error checking waitlist:', e);
+      return { status: 'new_user', message: 'Ready to create account.' };
+    }
+  };
+
+  /**
+   * Send a password reset email.
+   * 
+   * First checks if the email actually has an auth account:
+   * - has_account  → sends reset email via edge function
+   * - legacy_waitlist → returns isWaitlistOnly=true (caller should redirect to signup)
+   * - new_user → returns isWaitlistOnly=true (no account at all)
+   */
+  const forgotPassword = async (email: string): Promise<ForgotPasswordResult> => {
+    try {
+      // Step 1: Check if this email actually has an auth account
+      const status = await checkWaitlistEmail(email);
+
+      if (status.status !== 'has_account') {
+        // No auth account — can't reset a password that doesn't exist
+        return { error: null, isWaitlistOnly: true };
+      }
+
+      // Step 2: Email has an auth account — send the reset email
+      // Try the edge function first (same as web app), fall back to native Supabase
+      const redirectTo =
+        typeof window !== "undefined"
+          ? `${window.location.origin}/reset-password`
+          : undefined;
+
+      try {
+        const { data, error } = await supabase.functions.invoke("send-password-reset", {
+          body: { email, redirectTo },
+        });
+
+        if (error) {
+          console.warn("Edge function failed, falling back to native reset:", error);
+          // Fall back to Supabase native reset
+          const { error: nativeError } = await supabase.auth.resetPasswordForEmail(email, {
+            redirectTo,
+          });
+          if (nativeError) return { error: nativeError };
+        }
+      } catch (edgeFnError) {
+        console.warn("Edge function unavailable, using native reset:", edgeFnError);
+        const { error: nativeError } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo,
+        });
+        if (nativeError) return { error: nativeError };
+      }
+
+      return { error: null };
+    } catch (e: any) {
+      console.error("Unexpected forgot password error:", e);
+      return { error: e };
+    }
+  };
+
+  /**
+   * Set a new password (called from the ResetPassword page after
+   * the user clicks the link in their email).
+   */
+  const resetPassword = async (newPassword: string): Promise<{ error: any }> => {
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      return { error };
+    } catch (e: any) {
+      return { error: e };
+    }
+  };
+
   const signUp = async (email: string, password: string, userData: any) => {
     const redirectUrl =
       typeof window !== "undefined"
@@ -78,23 +187,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       userData.last_name ?? ""
     }`.trim();
 
-    // This must match the web app's `finalData` shape so the DB trigger
-    // can correctly populate public.profiles
     const finalMeta = {
       email,
       first_name: userData.first_name,
       last_name: userData.last_name,
       phone_number: userData.phone_number,
-      date_of_birth: userData.birthday, // from SignUp.tsx (birthdayISO)
+      date_of_birth: userData.birthday,
       gender_identity: userData.gender_identity,
       zip_code: userData.zip_code,
       preferred_retailers: preferredRetailers,
-      app_preference: "mobile", // hard-code for the mobile app
+      app_preference: "mobile",
       display_name: displayName,
     };
 
     try {
-      // 1) Create auth user (this triggers the confirmation email via Resend)
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -109,9 +215,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error };
       }
 
+      // Detect "empty identities" — email already has an auth account
+      if (data.user && data.user.identities && data.user.identities.length === 0) {
+        return {
+          error: {
+            message: 'This email is already registered. Please sign in instead, or use "Forgot Password" if you need to set up your password.',
+          },
+        };
+      }
+
       const userId = data.user?.id ?? null;
 
-      // 2) Upsert into public.waitlist with full info
+      // Upsert into waitlist
       try {
         const { error: waitlistError } = await supabase
           .from("waitlist")
@@ -144,8 +259,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.error("Unexpected waitlist error:", waitlistException);
       }
 
-      // 3) Try to hydrate public.profiles directly, including the new email column.
-      //    If RLS blocks this, it will just log an error and continue.
+      // Hydrate profile
       try {
         if (userId) {
           const { error: profileError } = await (supabase as any)
@@ -160,7 +274,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               preferred_retailers: finalMeta.preferred_retailers,
               app_preference: finalMeta.app_preference,
               phone_number: finalMeta.phone_number,
-              email, // <— new column you added
+              email,
             })
             .eq("user_id", userId);
 
@@ -172,9 +286,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.error("Unexpected profile update error:", profileException);
       }
 
-      // 4) Fire the same Resend-powered emails as the web app
+      // Send emails
       try {
-        // Welcome email to user
         await supabase.functions.invoke("send-welcome-email", {
           body: {
             name: displayName || userData.first_name || email,
@@ -182,7 +295,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           },
         });
 
-        // Notification email to admin
         await supabase.functions.invoke("notify-admin-signup", {
           body: {
             firstName: userData.first_name,
@@ -212,7 +324,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       password
     });
 
-    // Clear guest mode on successful sign in (auth state change will handle the actual clearing)
     if (!error) {
       setIsGuest(false);
     }
@@ -230,7 +341,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     loading,
     signUp,
     signIn,
-    signOut
+    signOut,
+    checkWaitlistEmail,
+    forgotPassword,
+    resetPassword,
   };
   return (
     <AuthContext.Provider value={value}>

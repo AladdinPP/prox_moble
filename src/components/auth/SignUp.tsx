@@ -5,6 +5,7 @@ import type { Resolver } from "react-hook-form";
 import { Eye, EyeOff, Calendar as CalendarIcon } from "lucide-react";
 
 import { useAuth } from "@/contexts/AuthContext";
+import type { WaitlistCheckResult } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 
 import { Button } from "@/components/ui/button";
@@ -299,11 +300,11 @@ type SignUpForm = z.infer<typeof fullSchema>;
 
 interface SignUpProps {
   onSuccess: () => void;
-  onSwitchToSignIn: () => void;
+  onSwitchToSignIn: (email?: string) => void;
 }
 
 export function SignUp({ onSuccess, onSwitchToSignIn }: SignUpProps) {
-  const { signUp } = useAuth();
+  const { signUp, checkWaitlistEmail } = useAuth();
   const { toast } = useToast();
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -311,6 +312,14 @@ export function SignUp({ onSuccess, onSwitchToSignIn }: SignUpProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Track legacy waitlist user status
+  const [isLegacyUser, setIsLegacyUser] = useState(false);
+  const [legacyData, setLegacyData] = useState<WaitlistCheckResult['existing_data'] | null>(null);
+
+  // Show confirmation screen after successful signup
+  const [signUpComplete, setSignUpComplete] = useState(false);
+  const [signUpEmail, setSignUpEmail] = useState("");
 
   // ✅ NEW: raw digits state for birthday (MMDDYYYY)
   const [birthdayDigits, setBirthdayDigits] = useState<string>("");
@@ -361,6 +370,37 @@ export function SignUp({ onSuccess, onSwitchToSignIn }: SignUpProps) {
   const handleNext = async () => {
     const ok = await trigger();
     if (!ok) return;
+
+    // When leaving step 1, check if this email is a legacy waitlist user
+    if (step === 1) {
+      const emailValue = (document.getElementById('email') as HTMLInputElement)?.value;
+      if (emailValue) {
+        try {
+          const result = await checkWaitlistEmail(emailValue);
+
+          if (result.status === 'has_account') {
+            toast({
+              title: "Account found",
+              description: 'This email already has an account. Please sign in, or use "Forgot Password" to reset your password.',
+            });
+            onSwitchToSignIn(emailValue);
+            return;
+          }
+
+          if (result.status === 'legacy_waitlist') {
+            setIsLegacyUser(true);
+            setLegacyData(result.existing_data ?? null);
+            toast({
+              title: "Welcome back! 👋",
+              description: "We found your waitlist info. Just set a password and confirm your details to activate your account.",
+            });
+          }
+        } catch (e) {
+          console.error("Waitlist check error:", e);
+        }
+      }
+    }
+
     setStep((s) => (s === 1 ? 2 : 3));
   };
 
@@ -403,28 +443,9 @@ export function SignUp({ onSuccess, onSwitchToSignIn }: SignUpProps) {
           variant: "destructive",
         });
       } else {
-        toast({
-          title: "Account created!",
-          description: "Please check your email to verify your account.",
-        });
-
-        reset({
-          firstName: "",
-          lastName: "",
-          phoneNumber: "",
-          email: "",
-          password: "",
-          confirmPassword: "",
-          zipCode: "",
-          householdSize: 1,
-          birthday: "MM/DD/YYYY",
-          genderIdentity: undefined as any,
-          selectedGrocers: [],
-        });
-
-        setBirthdayDigits("");
-        setStep(1);
-        onSuccess();
+        // Show the confirmation screen instead of navigating away
+        setSignUpEmail(data.email);
+        setSignUpComplete(true);
       }
     } catch (e) {
       toast({
@@ -436,6 +457,57 @@ export function SignUp({ onSuccess, onSwitchToSignIn }: SignUpProps) {
       setIsLoading(false);
     }
   };
+
+  // ── Confirmation screen (shown after successful signup) ──
+  if (signUpComplete) {
+    return (
+      <ProxCard className="w-full max-w-md mx-auto">
+        <ProxCardHeader>
+          <ProxCardTitle className="text-center text-2xl font-primary font-semibold text-black">
+            Check Your Email 📧
+          </ProxCardTitle>
+        </ProxCardHeader>
+        <ProxCardContent className="text-center space-y-4">
+          <div className="mx-auto w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center mb-2">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="32"
+              height="32"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="text-accent"
+            >
+              <rect width="20" height="16" x="2" y="4" rx="2" />
+              <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+            </svg>
+          </div>
+          <p className="text-muted-foreground font-secondary">
+            A confirmation email has been sent to:
+          </p>
+          <p className="font-semibold text-black font-secondary">
+            {signUpEmail}
+          </p>
+          <p className="text-muted-foreground font-secondary text-sm">
+            Please click the link in the email to verify your account before attempting to sign in.
+          </p>
+          <p className="text-muted-foreground font-secondary text-xs">
+            Don't see it? Check your spam folder.
+          </p>
+          <Button
+            type="button"
+            className="w-full h-12 bg-prox hover:bg-prox-hover text-white font-secondary mt-4"
+            onClick={() => onSwitchToSignIn(signUpEmail)}
+          >
+            Go to Sign In
+          </Button>
+        </ProxCardContent>
+      </ProxCard>
+    );
+  }
 
   return (
     <ProxCard className="w-full max-w-md mx-auto">

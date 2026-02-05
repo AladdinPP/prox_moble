@@ -12,6 +12,9 @@ export function Auth() {
     searchParams.get('mode') === 'signup' ? 'signup' : 'signin'
   );
 
+  // Track email to pre-fill when switching between signin/signup
+  const [prefillEmail, setPrefillEmail] = useState<string>('');
+
   // Redirect authenticated users
   useEffect(() => {
     if (user) {
@@ -27,9 +30,14 @@ export function Auth() {
     navigate('/onboarding');
   };
 
-  const handleSwitchMode = (newMode: 'signin' | 'signup') => {
+  const handleSwitchMode = (newMode: 'signin' | 'signup', email?: string) => {
     setMode(newMode);
     setSearchParams({ mode: newMode });
+    if (email) {
+      setPrefillEmail(email);
+    } else {
+      setPrefillEmail('');
+    }
   };
 
   return (
@@ -37,12 +45,13 @@ export function Auth() {
       {mode === 'signin' ? (
         <SignIn
           onSuccess={handleSignInSuccess}
-          onSwitchToSignUp={() => handleSwitchMode('signup')}
+          onSwitchToSignUp={(email?: string) => handleSwitchMode('signup', email)}
+          prefillEmail={prefillEmail}
         />
       ) : (
         <SignUp
           onSuccess={handleSignUpSuccess}
-          onSwitchToSignIn={() => handleSwitchMode('signin')}
+          onSwitchToSignIn={(email?: string) => handleSwitchMode('signin', email)}
         />
       )}
     </div>

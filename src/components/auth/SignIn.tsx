@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -19,23 +19,40 @@ type SignInForm = z.infer<typeof signInSchema>;
 
 interface SignInProps {
   onSuccess: () => void;
-  onSwitchToSignUp: () => void;
+  onSwitchToSignUp: (email?: string) => void;
+  prefillEmail?: string;
 }
 
-export function SignIn({ onSuccess, onSwitchToSignUp }: SignInProps) {
-  const { signIn } = useAuth();
+export function SignIn({ onSuccess, onSwitchToSignUp, prefillEmail }: SignInProps) {
+  const { signIn, forgotPassword, checkWaitlistEmail } = useAuth();
   const { toast } = useToast();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
 
   const {
     register,
     handleSubmit,
     formState: { errors },
-    reset
+    reset,
+    setValue,
+    watch,
   } = useForm<SignInForm>({
     resolver: zodResolver(signInSchema),
+    defaultValues: {
+      email: prefillEmail || '',
+      password: '',
+    },
   });
+
+  // Pre-fill email when passed from SignUp redirect
+  useEffect(() => {
+    if (prefillEmail) {
+      setValue('email', prefillEmail);
+    }
+  }, [prefillEmail, setValue]);
+
+  const emailValue = watch('email');
 
   const onSubmit = async (data: SignInForm) => {
     setIsLoading(true);
@@ -43,6 +60,35 @@ export function SignIn({ onSuccess, onSwitchToSignUp }: SignInProps) {
       const { error } = await signIn(data.email, data.password);
 
       if (error) {
+        // If credentials are invalid, check whether the account even exists
+        // to give a more helpful error message
+        if (
+          error.message?.toLowerCase().includes('invalid login credentials') ||
+          error.message?.toLowerCase().includes('invalid credentials')
+        ) {
+          try {
+            const status = await checkWaitlistEmail(data.email);
+            if (status.status === 'new_user') {
+              toast({
+                title: "No account found",
+                description: "This email doesn't have an account yet. Would you like to sign up?",
+                variant: "destructive",
+              });
+              return;
+            }
+            if (status.status === 'legacy_waitlist') {
+              toast({
+                title: "Account not yet set up",
+                description: "We found your waitlist entry, but you need to sign up first to set a password.",
+              });
+              onSwitchToSignUp(data.email);
+              return;
+            }
+          } catch {
+            // Fall through to generic error
+          }
+        }
+
         toast({
           title: "Sign in failed",
           description: error.message,
@@ -64,6 +110,65 @@ export function SignIn({ onSuccess, onSwitchToSignUp }: SignInProps) {
       });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!emailValue || !emailValue.trim()) {
+      toast({
+        title: "Email required",
+        description: "Please enter your email address first, then tap Forgot Password.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Basic email format check
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(emailValue.trim())) {
+      toast({
+        title: "Invalid email",
+        description: "Please enter a valid email address.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsResettingPassword(true);
+
+    try {
+      const result = await forgotPassword(emailValue.trim());
+
+      if (result.isWaitlistOnly) {
+        // This email has no auth account — they need to sign up first
+        toast({
+          title: "No account found",
+          description: "This email is on our waitlist but doesn't have an account yet. Let's get you signed up!",
+        });
+        onSwitchToSignUp(emailValue.trim());
+        return;
+      }
+
+      if (result.error) {
+        toast({
+          title: "Reset failed",
+          description: result.error.message || "Failed to send reset email. Please try again.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Check your email 📧",
+          description: "We've sent a password reset link to your email.",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsResettingPassword(false);
     }
   };
 
@@ -113,10 +218,22 @@ export function SignIn({ onSuccess, onSwitchToSignUp }: SignInProps) {
             )}
           </div>
 
+          {/* Forgot Password link */}
+          <div className="text-right">
+            <button
+              type="button"
+              onClick={handleForgotPassword}
+              disabled={isResettingPassword || isLoading}
+              className="text-sm text-accent hover:underline font-secondary disabled:opacity-50"
+            >
+              {isResettingPassword ? "Checking account..." : "Forgot Password?"}
+            </button>
+          </div>
+
           <Button
             type="submit"
             className="w-full h-12 bg-prox hover:bg-prox-hover text-white font-secondary"
-            disabled={isLoading}
+            disabled={isLoading || isResettingPassword}
           >
             {isLoading ? "Signing In..." : "Sign In"}
           </Button>
@@ -124,7 +241,7 @@ export function SignIn({ onSuccess, onSwitchToSignUp }: SignInProps) {
           <div className="text-center">
             <button
               type="button"
-              onClick={onSwitchToSignUp}
+              onClick={() => onSwitchToSignUp()}
               className="text-sm text-accent hover:underline font-secondary"
             >
               Don't have an account? Sign up
