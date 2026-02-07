@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, MapPin, CreditCard, TrendingUp } from "lucide-react";
+import { TrendingUp } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -121,86 +121,137 @@ function getRewardForSpend(spend: number): string {
 
 // --- Step 1: Intro / Explainer ---
 function Step1Intro({ onNext }: { onNext: () => void }) {
+  const [revealedCount, setRevealedCount] = useState(0);
+
+  useEffect(() => {
+    // Check for reduced motion preference
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    if (prefersReducedMotion) {
+      // Skip animation, show all cards immediately
+      setRevealedCount(5);
+      return;
+    }
+
+    // Staggered reveal: increment every 800ms until we reach 5 (~4000ms total)
+    const interval = setInterval(() => {
+      setRevealedCount((prev) => {
+        if (prev >= 5) {
+          clearInterval(interval);
+          return 5;
+        }
+        return prev + 1;
+      });
+    }, 800);
+
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <div className="flex-1 flex flex-col items-center justify-center px-6 py-12">
         {/* Icon */}
-        <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center mb-6">
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="w-10 h-10 text-prox"
-          >
-            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-            <polyline points="9 22 9 12 15 12 15 22" />
-          </svg>
+        <div className="w-20 h-20 flex items-center justify-center mb-6">
+          <img src="/Icon-01.png" alt="Prox" className="h-20 w-20 object-contain" />
         </div>
 
         {/* Title */}
         <h1 className="text-2xl font-bold text-gray-900 mb-8 text-center">
           <span className="block">Save Money on Groceries</span>
-          <span className="block">without coupons!</span>
+          <span className="block">Without Coupons!</span>
         </h1>
 
         {/* Feature Cards */}
         <div className="w-full max-w-md space-y-4">
-          {/* Card 1: Search Any Product */}
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-            <div className="flex items-start gap-4">
-              <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
-                <Search className="w-6 h-6 text-prox" />
-              </div>
-              <div>
-                <h3 className="font-bold text-gray-900 mb-1">
-                  Search Any Product.
-                </h3>
-                <p className="text-sm text-gray-500">
-                  Type in any grocery item you need - milk, bread, apples,
-                  anything!
-                </p>
+          {/* Card 1: Cart Optimizer */}
+          {revealedCount >= 1 && (
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 animate-in fade-in duration-300">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                  <img src="/cart_finder.png" alt="Cart Optimizer" className="h-6 w-6 object-contain" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900 mb-1">
+                    Cart Optimizer
+                  </h3>
+                  <p className="text-sm font-bold text-gray-900 mb-1">Find the cheapest way to shop your entire list.</p>
+                  <p className="text-sm text-gray-500">Add the items you need and Prox calculates the lowest-cost store combination.</p>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
-          {/* Card 2: Compare All Local Prices */}
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-            <div className="flex items-start gap-4">
-              <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
-                <MapPin className="w-6 h-6 text-prox" />
-              </div>
-              <div>
-                <h3 className="font-bold text-gray-900 mb-1">
-                  Compare All Local Prices.
-                </h3>
-                <p className="text-sm text-gray-500">
-                  See real-time prices from every grocery store in your area,
-                  all in one place.
-                </p>
+          {/* Card 2: Deals */}
+          {revealedCount >= 2 && (
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 animate-in fade-in duration-300">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                  <img src="/flame.png" alt="Deals" className="h-6 w-6 object-contain" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900 mb-1">
+                    Deals
+                  </h3>
+                  <p className="text-sm font-bold text-gray-900 mb-1">See the best grocery deals near you.</p>
+                  <p className="text-sm text-gray-500">Browse weekly sales and price drops across your local stores.</p>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
-          {/* Card 3: Save Money Instantly */}
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-            <div className="flex items-start gap-4">
-              <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
-                <CreditCard className="w-6 h-6 text-prox" />
-              </div>
-              <div>
-                <h3 className="font-bold text-gray-900 mb-1">
-                  Save Money Instantly.
-                </h3>
-                <p className="text-sm text-gray-500">
-                  Shop at the store with the lowest prices and keep more money
-                  in your pocket.
-                </p>
+          {/* Card 3: Cart Results */}
+          {revealedCount >= 3 && (
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 animate-in fade-in duration-300">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                  <img src="/cart_result.png" alt="Cart Results" className="h-6 w-6 object-contain" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900 mb-1">
+                    Cart Results
+                  </h3>
+                  <p className="text-sm font-bold text-gray-900 mb-1">Compare store totals before you shop.</p>
+                  <p className="text-sm text-gray-500">View your full cart price at each store and pick the cheapest option.</p>
+                </div>
               </div>
             </div>
-          </div>
+          )}
+
+          {/* Card 4: Pantry Tracker */}
+          {revealedCount >= 4 && (
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 animate-in fade-in duration-300">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                  <img src="/pantry.png" alt="Pantry Tracker" className="h-6 w-6 object-contain" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900 mb-1">
+                    Pantry Tracker
+                  </h3>
+                  <p className="text-sm font-bold text-gray-900 mb-1">Stop buying what you already have.</p>
+                  <p className="text-sm text-gray-500">Add pantry items so Prox avoids duplicates and shops smarter.</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Card 5: Account */}
+          {revealedCount >= 5 && (
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 animate-in fade-in duration-300">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                  <img src="/user.png" alt="Account" className="h-6 w-6 object-contain" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900 mb-1">
+                    Account
+                  </h3>
+                  <p className="text-sm font-bold text-gray-900 mb-1">Personalize Prox to how you shop.</p>
+                  <p className="text-sm text-gray-500">Set your location, stores, and preferences for better savings.</p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

@@ -93,7 +93,7 @@ export function CartPage() {
                       className="h-8 w-8 opacity-50"
                     />
                   </div>
-                  <p className="text-base font-semibold text-gray-900 mb-4">Your manual cart is empty</p>
+                  <p className="text-base font-semibold text-gray-900 mb-4">Your Build-a-Cart is empty</p>
                   <p className="text-gray-400 text-sm mb-4 leading-relaxed">Add items to compare prices across stores and find the best deals!</p>
                   <Button
                     className="w-full rounded-full py-2.5 text-sm font-semibold bg-prox text-white hover:bg-prox-hover shadow-sm sm:w-auto"
@@ -110,7 +110,7 @@ export function CartPage() {
                     <AccordionTrigger className="hover:no-underline py-3 px-4 bg-gray-50/80 data-[state=open]:bg-gray-50 transition-colors min-w-0 overflow-hidden">
                       <div className="flex justify-between items-center w-full pr-2 min-w-0">
                         <div className="text-left min-w-0">
-                          <p className="font-semibold text-sm truncate">Manual Cart</p>
+                          <p className="font-semibold text-sm truncate">Build-a-Cart</p>
                           <p className="text-[11px] text-gray-500 truncate">{items.length} Item{items.length > 1 ? 's' : ''}</p>
                         </div>
                         <span className="text-lg font-bold text-green-700">${manualTotal.toFixed(2)}</span>
