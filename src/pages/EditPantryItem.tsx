@@ -18,6 +18,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useUi } from "@/contexts/UiContext";
 import { useGuestStore } from "@/stores/guestStore";
+import type { GuestItem } from "@/stores/guestStore";
 
 const sizeOptions = [
   { value: "count", label: "Count" },
@@ -95,7 +96,7 @@ export function EditPantryItem() {
       setLoading(true);
       try {
         if (isGuest) {
-          const item = (guestItems as any[])?.find((x) => x.id === id);
+          const item = guestItems.find((x: GuestItem) => x.id === id);
           if (!item) {
             toast({ title: "Not found", description: "Item not found.", variant: "destructive" });
             navigate("/pantry-tracker");
@@ -122,7 +123,6 @@ export function EditPantryItem() {
         }
 
         const { data, error } = await supabase
-          // @ts-expect-error
           .from("pantry_tracker")
           .select("id, name, brand, category, quantity, unit, purchased_at, user_id")
           .eq("id", id)
@@ -178,7 +178,6 @@ export function EditPantryItem() {
     // Delete cache row so pantry view will re-resolve on next load
     try {
       await supabase
-        // @ts-expect-error
         .from("pantry_item_images")
         .delete()
         .eq("pantry_item_id", id);
@@ -217,7 +216,7 @@ export function EditPantryItem() {
           unit: values.unit,
           purchased_at: values.purchasedAt.toISOString(),
           updated_at: new Date().toISOString(),
-        } as any);
+        });
 
         await invalidateImageCacheIfNeeded(nextSnap);
 
@@ -227,7 +226,6 @@ export function EditPantryItem() {
       }
 
       const { error } = await supabase
-        // @ts-expect-error
         .from("pantry_tracker")
         .update({
           name: values.name,
@@ -264,7 +262,6 @@ export function EditPantryItem() {
       }
 
       const { error } = await supabase
-        // @ts-expect-error
         .from("pantry_tracker")
         .delete()
         .eq("id", id);

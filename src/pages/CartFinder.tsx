@@ -40,6 +40,8 @@ import { useCart } from "@/contexts/CartContext";
 import { useToast } from "@/hooks/use-toast";
 import { BottomNav } from "@/components/BottomNav";
 import { useAuth } from "@/contexts/AuthContext";
+import { getErrorMessage } from "@/lib/error";
+import type { Database } from "@/integrations/supabase/types";
 
 // --- Types ---
 type EditableCartItem = {
@@ -60,6 +62,8 @@ type DealMenuItem = {
   image_link: string | null;
   retailer_logo_url: string | null;
 };
+
+type SearchDealsRow = Database["public"]["Functions"]["search_deals_fuzzy"]["Returns"][number];
 
 type OptimizedCartItem = {
   searched_item: string;
@@ -794,7 +798,7 @@ export function CartFinder() {
 
   const cartTotal = useMemo(() => {
     const total = items.reduce(
-      (sum: number, it: any) => sum + (Number(it?.price) || 0),
+      (sum: number, it) => sum + (Number(it?.price) || 0),
       0
     );
     return total;
@@ -854,7 +858,7 @@ export function CartFinder() {
 
     return () => {
       document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("touchstart", onPointerDown as any);
+      document.removeEventListener("touchstart", onPointerDown as EventListener);
       document.removeEventListener("keydown", onKeyDown);
     };
   }, [locationPanelOpen, retailersOpenPanel]);
@@ -1279,19 +1283,19 @@ export function CartFinder() {
 
         if (rpcError) throw rpcError;
 
-        const rawDeals = (rawData as any[]) || [];
+        const rawDeals = (rawData || []) as SearchDealsRow[];
 
         // ✅ Filter out null prices and normalize
         const normalizedDeals: DealMenuItem[] = rawDeals
-          .filter((d) => d?.product_name != null)
           .filter(
-            (d) =>
-              d?.product_price != null &&
+            (d): d is SearchDealsRow & { product_name: string; product_price: number } =>
+              typeof d.product_name === "string" &&
+              d.product_price != null &&
               !Number.isNaN(Number(d.product_price))
           )
           .map((d) => ({
-            retailer: d.retailer,
-            zip_code: d.zip_code,
+            retailer: d.retailer ?? "",
+            zip_code: d.zip_code ?? zipForRpc,
             searched_item_name: searchTerms[0],
             product_name: d.product_name,
             product_price: Number(d.product_price),
@@ -1451,9 +1455,9 @@ export function CartFinder() {
       } else {
         setResult(bestCart);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Optimizer Error:", err);
-      setError(err.message || "Failed to fetch cart.");
+      setError(getErrorMessage(err, "Failed to fetch cart."));
     } finally {
       setLoading(false);
     }

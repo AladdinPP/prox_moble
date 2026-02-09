@@ -33,6 +33,11 @@ interface Item {
   owner_last_name?: string;
 }
 
+interface HouseholdMemberRpcRow {
+  id: string;
+  first_name?: string | null;
+  last_name?: string | null;
+}
 
 
 
@@ -64,12 +69,16 @@ export function Home() {
       fetchUserItems();
       fetchHouseholdMembers();
     }
+    // Intentionally run on auth/guest source changes only to avoid repeated refetch loops.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, isGuest, guestItems]);
 
   useEffect(() => {
     if (householdMembers.length > 0) {
       fetchHouseholdItems();
     }
+    // Intentionally tied to member list changes; household fetchers are stateful callbacks.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [householdMembers]);
 
   const fetchUserItems = async () => {
@@ -109,9 +118,9 @@ export function Home() {
       }
 
       // Use the database function to get household members
-      const householdId = typeof userHousehold === 'string' ? parseInt(userHousehold) : userHousehold;
+      const householdId = typeof userHousehold === 'string' ? parseInt(userHousehold, 10) : userHousehold;
       
-      const { data: membersData, error: membersError } = await (supabase as any)
+      const { data: membersData, error: membersError } = await supabase
         .rpc('get_household_members', { household_id_param: householdId });
 
       if (membersError) {
@@ -125,11 +134,11 @@ export function Home() {
         throw membersError;
       }
 
-      const members = (membersData as any[])?.map((member: any) => ({
+      const members = ((membersData || []) as HouseholdMemberRpcRow[]).map((member) => ({
         id: member.id,
         first_name: member.first_name || 'Unknown',
         last_name: member.last_name || 'User'
-      })) || [];
+      }));
 
       setHouseholdMembers(members);
     } catch (error) {

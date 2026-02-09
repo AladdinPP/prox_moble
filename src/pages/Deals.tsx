@@ -31,6 +31,8 @@ import { useCart } from "@/contexts/CartContext";
 import { useToast } from "@/hooks/use-toast";
 import { BottomNav } from "@/components/BottomNav";
 import { useAuth } from "@/contexts/AuthContext";
+import { getErrorMessage } from "@/lib/error";
+import type { Database, Tables } from "@/integrations/supabase/types";
 
 // --- Types ---
 type EditableCartItem = {
@@ -63,6 +65,9 @@ type OptimizedCartItem = {
   image_link: string | null;
   retailer_logo_url: string | null;
 };
+
+type FlyerDealRow = Tables<"flyer_deals">;
+type SearchDealsRow = Database["public"]["Functions"]["search_deals_fuzzy"]["Returns"][number];
 
 const PLACEHOLDER_IMG = "https://via.placeholder.com/100x100.png?text=No+Image";
 
@@ -622,7 +627,7 @@ export function Deals() {
 
   const cartTotal = useMemo(() => {
     const total = items.reduce(
-      (sum: number, it: any) => sum + (Number(it?.price) || 0),
+      (sum: number, it) => sum + (Number(it?.price) || 0),
       0
     );
     return total;
@@ -682,7 +687,7 @@ export function Deals() {
 
     return () => {
       document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("touchstart", onPointerDown as any);
+      document.removeEventListener("touchstart", onPointerDown as EventListener);
       document.removeEventListener("keydown", onKeyDown);
     };
   }, [locationPanelOpen, retailersOpenPanel]);
@@ -697,8 +702,7 @@ export function Deals() {
       setLoadingFeatured(true);
       try {
         // Query flyer_deals for featured items
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: rawDeals, error } = await (supabase as any)
+        const { data: rawDeals, error } = await supabase
           .from("flyer_deals")
           .select("*")
           .eq("zip_code", effectiveZip)
@@ -709,17 +713,19 @@ export function Deals() {
 
         if (error) throw error;
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const deals = (rawDeals || [])
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .filter((d: any) => d?.product_name && d?.product_price != null)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .map((d: any) => ({
+          .filter(
+            (d): d is FlyerDealRow & { product_name: string; product_price: number } =>
+              typeof d.product_name === "string" &&
+              d.product_price !== null &&
+              !Number.isNaN(Number(d.product_price))
+          )
+          .map((d) => ({
             searched_item: "",
             product_name: d.product_name,
             product_price: Number(d.product_price),
-            retailer: d.retailer || "",
-            zip_code: d.zip_code || effectiveZip,
+            retailer: d.retailer ?? "",
+            zip_code: d.zip_code ?? effectiveZip,
             distance_m: 0,
             product_size: d.product_size ?? null,
             image_link: d.image_link ?? null,
@@ -802,8 +808,7 @@ export function Deals() {
   const refreshFeatured = async () => {
     setLoadingFeatured(true);
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: rawDeals, error } = await (supabase as any)
+      const { data: rawDeals, error } = await supabase
         .from("flyer_deals")
         .select("*")
         .eq("zip_code", effectiveZip)
@@ -814,17 +819,19 @@ export function Deals() {
 
       if (error) throw error;
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const deals = (rawDeals || [])
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .filter((d: any) => d?.product_name && d?.product_price != null)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .map((d: any) => ({
+        .filter(
+          (d): d is FlyerDealRow & { product_name: string; product_price: number } =>
+            typeof d.product_name === "string" &&
+            d.product_price !== null &&
+            !Number.isNaN(Number(d.product_price))
+        )
+        .map((d) => ({
           searched_item: "",
           product_name: d.product_name,
           product_price: Number(d.product_price),
-          retailer: d.retailer || "",
-          zip_code: d.zip_code || effectiveZip,
+          retailer: d.retailer ?? "",
+          zip_code: d.zip_code ?? effectiveZip,
           distance_m: 0,
           product_size: d.product_size ?? null,
           image_link: d.image_link ?? null,
@@ -1103,19 +1110,19 @@ export function Deals() {
 
       if (rpcError) throw rpcError;
 
-      const rawDeals = (rawData as any[]) || [];
+      const rawDeals = (rawData || []) as SearchDealsRow[];
 
       // Filter out null prices and normalize
       const normalizedDeals: DealMenuItem[] = rawDeals
-        .filter((d) => d?.product_name != null)
         .filter(
-          (d) =>
-            d?.product_price != null &&
+          (d): d is SearchDealsRow & { product_name: string; product_price: number } =>
+            typeof d.product_name === "string" &&
+            d.product_price != null &&
             !Number.isNaN(Number(d.product_price))
         )
         .map((d) => ({
-          retailer: d.retailer,
-          zip_code: d.zip_code,
+          retailer: d.retailer ?? "",
+          zip_code: d.zip_code ?? zipForRpc,
           searched_item_name: searchTerms[0],
           product_name: d.product_name,
           product_price: Number(d.product_price),
@@ -1184,9 +1191,9 @@ export function Deals() {
       });
 
       setSingleItemDeals(normalized);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Search Error:", err);
-      setError(err.message || "Failed to search deals.");
+      setError(getErrorMessage(err, "Failed to search deals."));
     } finally {
       setLoading(false);
     }

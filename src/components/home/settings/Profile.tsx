@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -31,12 +31,29 @@ const profileSchema = z.object({
 
 type ProfileForm = z.infer<typeof profileSchema>;
 
+interface ProfileData {
+  email?: string;
+  first_name?: string;
+  last_name?: string;
+  zip_code?: string;
+  birthday?: string;
+  household_size?: number;
+  grocer_1?: string;
+  grocer_2?: string;
+  firstName?: string;
+  lastName?: string;
+  zipCode?: string;
+  householdSize?: number;
+  grocer1?: string;
+  grocer2?: string;
+}
+
 export function Profile() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [profileData, setProfileData] = useState<any>(null);
+  const [profileData, setProfileData] = useState<ProfileData | null>(null);
 
   const {
     register,
@@ -54,45 +71,38 @@ export function Profile() {
 
   const selectedDate = watch('birthday');
 
-  // Fetch user profile data
-  useEffect(() => {
-    if (user) {
-      fetchProfileData();
-    }
-  }, [user]);
-
-  const fetchProfileData = async () => {
+  const fetchProfileData = useCallback(async () => {
     if (!user) return;
 
     setIsLoading(true);
     try {
       // First try to get data from profiles table
-      const { data: profileData, error: profileError } = await supabase
+      const { data: profileRowData, error: profileError } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
         .single();
 
       // Get user metadata from auth user object
-      const metaData = user.user_metadata || {};
+      const metaData = (user.user_metadata || {}) as ProfileData;
 
       // Use profile data if available, otherwise fall back to user meta data
-      const data = profileData || {};
+      const data = (profileRowData || {}) as ProfileData;
 
       setProfileData({ ...data, ...metaData });
       
       // Populate form with existing data (prioritize profiles table, then user meta data)
       reset({
-        email: (data as any).email || (metaData as any).email || user.email || '',
-        firstName: (data as any).first_name || (metaData as any).first_name || '',
-        lastName: (data as any).last_name || (metaData as any).last_name || '',
-        zipCode: (data as any).zip_code || (metaData as any).zip_code || '',
-        birthday: (data as any).birthday ? new Date((data as any).birthday) : 
-                 (metaData as any).birthday ? new Date((metaData as any).birthday) : 
+        email: data.email || metaData.email || user.email || '',
+        firstName: data.first_name || metaData.first_name || '',
+        lastName: data.last_name || metaData.last_name || '',
+        zipCode: data.zip_code || metaData.zip_code || '',
+        birthday: data.birthday ? new Date(data.birthday) : 
+                 metaData.birthday ? new Date(metaData.birthday) : 
                  new Date(2000, 0, 1),
-        householdSize: (data as any).household_size || (metaData as any).household_size || 1,
-        grocer1: (data as any).grocer_1 || (metaData as any).grocer_1 || '',
-        grocer2: (data as any).grocer_2 || (metaData as any).grocer_2 || '',
+        householdSize: data.household_size || metaData.household_size || 1,
+        grocer1: data.grocer_1 || metaData.grocer_1 || '',
+        grocer2: data.grocer_2 || metaData.grocer_2 || '',
       });
     } catch (error) {
       console.error('Error fetching profile:', error);
@@ -104,7 +114,14 @@ export function Profile() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [reset, toast, user]);
+
+  // Fetch user profile data
+  useEffect(() => {
+    if (user) {
+      fetchProfileData();
+    }
+  }, [user, fetchProfileData]);
 
   const onSubmit = async (data: ProfileForm) => {
     if (!user) return;
@@ -193,36 +210,36 @@ export function Profile() {
                 <div className="flex justify-between">
                   <span className="text-muted-foreground font-secondary">Name:</span>
                   <span className="text-foreground font-medium">
-                    {(profileData as any).first_name || (profileData as any).firstName} {(profileData as any).last_name || (profileData as any).lastName}
+                    {profileData.first_name || profileData.firstName} {profileData.last_name || profileData.lastName}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground font-secondary">Email:</span>
-                  <span className="text-foreground font-medium">{(profileData as any).email}</span>
+                  <span className="text-foreground font-medium">{profileData.email}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground font-secondary">Zip Code:</span>
-                  <span className="text-foreground font-medium">{(profileData as any).zip_code || (profileData as any).zipCode}</span>
+                  <span className="text-foreground font-medium">{profileData.zip_code || profileData.zipCode}</span>
                 </div>
               </div>
               <div className="space-y-2">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground font-secondary">Birthday:</span>
                   <span className="text-foreground font-medium">
-                    {(profileData as any).birthday ? format(new Date((profileData as any).birthday), "MMM d, yyyy") : 'Not set'}
+                    {profileData.birthday ? format(new Date(profileData.birthday), "MMM d, yyyy") : 'Not set'}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground font-secondary">Household Size:</span>
-                  <span className="text-foreground font-medium">{(profileData as any).household_size || (profileData as any).householdSize || 1}</span>
+                  <span className="text-foreground font-medium">{profileData.household_size || profileData.householdSize || 1}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground font-secondary">Grocer 1:</span>
-                  <span className="text-foreground font-medium">{(profileData as any).grocer_1 || (profileData as any).grocer1 || 'Not set'}</span>
+                  <span className="text-foreground font-medium">{profileData.grocer_1 || profileData.grocer1 || 'Not set'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground font-secondary">Grocer 2:</span>
-                  <span className="text-foreground font-medium">{(profileData as any).grocer_2 || (profileData as any).grocer2 || 'Not set'}</span>
+                  <span className="text-foreground font-medium">{profileData.grocer_2 || profileData.grocer2 || 'Not set'}</span>
                 </div>
               </div>
             </div>

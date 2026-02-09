@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -24,13 +24,7 @@ export function DeleteCategory({setCategoriesChangeTracker,categoriesChangeTrack
   const { user } = useAuth();
   const { toast } = useToast();
 
-  useEffect(() => {
-    if (open && user) {
-      fetchUserCategories();
-    }
-  }, [open, user]);
-
-  const fetchUserCategories = async () => {
+  const fetchUserCategories = useCallback(async () => {
     if (!user) return;
 
     try {
@@ -49,7 +43,13 @@ export function DeleteCategory({setCategoriesChangeTracker,categoriesChangeTrack
         variant: "destructive",
       });
     }
-  };
+  }, [user, toast]);
+
+  useEffect(() => {
+    if (open && user) {
+      fetchUserCategories();
+    }
+  }, [open, user, fetchUserCategories]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,7 +74,7 @@ export function DeleteCategory({setCategoriesChangeTracker,categoriesChangeTrack
 
     setLoading(true);
     try {
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from('other_categories')
         .delete()
         .eq('name', selectedCategory)

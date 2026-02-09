@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -12,13 +12,7 @@ export function HouseholdOverview() {
   const [loading, setLoading] = useState(true);
   const [hasHousehold, setHasHousehold] = useState<boolean | null>(null);
 
-  useEffect(() => {
-    if (user) {
-      checkHouseholdStatus();
-    }
-  }, [user]);
-
-  const checkHouseholdStatus = async () => {
+  const checkHouseholdStatus = useCallback(async () => {
     if (!user) return;
 
     setLoading(true);
@@ -60,7 +54,13 @@ export function HouseholdOverview() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast, user]);
+
+  useEffect(() => {
+    if (user) {
+      checkHouseholdStatus();
+    }
+  }, [user, checkHouseholdStatus]);
 
   if (loading) {
     return (

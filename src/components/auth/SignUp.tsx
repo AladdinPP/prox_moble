@@ -7,6 +7,7 @@ import { Eye, EyeOff, Calendar as CalendarIcon } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import type { WaitlistCheckResult } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { getErrorMessage } from "@/lib/error";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -133,11 +134,11 @@ const parseMMDDYYYY = (value?: string) => {
 
 // Convert Zod issues -> RHF errors
 function zodToRHFErrors<T>(issues: z.ZodIssue[]): FieldErrors<T> {
-  const fieldErrors: any = {};
+  const fieldErrors: Record<string, { type: string; message: string }> = {};
   for (const issue of issues) {
     const path = issue.path?.[0];
     if (!path) continue;
-    fieldErrors[path] = { type: issue.code, message: issue.message };
+    fieldErrors[String(path)] = { type: issue.code, message: issue.message };
   }
   return fieldErrors as FieldErrors<T>;
 }
@@ -261,7 +262,7 @@ const baseSchema = z.object({
   householdSize: z.number().min(1).max(12),
 
   genderIdentity: z.enum(GENDER_OPTIONS, {
-    required_error: "Gender identity is required",
+    message: "Gender identity is required",
   }),
 
   selectedGrocers: z
@@ -336,7 +337,7 @@ export function SignUp({ onSuccess, onSwitchToSignIn }: SignUpProps) {
       }
 
       return {
-        values: {},
+        values: {} as SignUpForm,
         errors: zodToRHFErrors<SignUpForm>(parsed.error.issues),
       };
     };
@@ -362,7 +363,7 @@ export function SignUp({ onSuccess, onSwitchToSignIn }: SignUpProps) {
       householdSize: 1,
       // NOTE: stored value will be set from birthdayDigits via Controller
       birthday: "MM/DD/YYYY",
-      genderIdentity: undefined as any, // user must select
+      genderIdentity: undefined as SignUpForm["genderIdentity"] | undefined, // user must select
       selectedGrocers: [],
     },
   });
@@ -439,7 +440,7 @@ export function SignUp({ onSuccess, onSwitchToSignIn }: SignUpProps) {
       if (error) {
         toast({
           title: "Sign up failed",
-          description: error.message,
+          description: getErrorMessage(error, "Failed to create your account."),
           variant: "destructive",
         });
       } else {
@@ -624,7 +625,9 @@ export function SignUp({ onSuccess, onSwitchToSignIn }: SignUpProps) {
                             const nextCaretPos = findCursorPosFromDigitIndex(formatted, removeIndex);
                             try {
                               inputEl.setSelectionRange(nextCaretPos, nextCaretPos);
-                            } catch {}
+                            } catch {
+                              // Ignore selection update errors on unsupported input states.
+                            }
                           });
                         }
                       }}
@@ -864,7 +867,6 @@ export function SignUp({ onSuccess, onSwitchToSignIn }: SignUpProps) {
                               initialFocus
                               classNames={{
                                 caption_label: "hidden",
-                                dropdowns: "flex items-center gap-2",
                                 dropdown: "w-auto",
                                 caption: "flex items-center justify-center gap-2 relative pt-1",
                                 caption_dropdowns: "flex items-center gap-2",
@@ -1031,7 +1033,7 @@ export function SignUp({ onSuccess, onSwitchToSignIn }: SignUpProps) {
           <div className="text-center">
             <button
               type="button"
-              onClick={onSwitchToSignIn}
+              onClick={() => onSwitchToSignIn()}
               className="text-sm text-accent hover:underline font-secondary"
             >
               Already have an account? Sign in

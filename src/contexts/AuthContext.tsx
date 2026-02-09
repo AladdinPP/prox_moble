@@ -17,21 +17,49 @@ export interface WaitlistCheckResult {
 }
 
 export interface ForgotPasswordResult {
-  error: any;
+  error: unknown;
   /** If the email belongs to a waitlist-only user (no auth account) */
   isWaitlistOnly?: boolean;
 }
+
+interface SignUpUserData {
+  first_name?: string;
+  last_name?: string;
+  phone_number?: string;
+  zip_code?: string;
+  birthday?: string;
+  gender_identity?: string;
+  household_size?: number;
+  grocer_1?: string;
+  grocer_2?: string;
+  grocer_3?: string;
+}
+
+type CheckWaitlistEmailRpcClient = {
+  rpc: (
+    fn: "check_waitlist_email",
+    args: { lookup_email: string }
+  ) => Promise<{ data: WaitlistCheckResult | null; error: unknown }>;
+};
+
+type ProfilesUpdateClient = {
+  from: (table: "profiles") => {
+    update: (values: Record<string, unknown>) => {
+      eq: (column: string, value: string) => Promise<{ error: unknown }>;
+    };
+  };
+};
 
 interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
-  signUp: (email: string, password: string, userData: any) => Promise<{ error: any }>;
-  signIn: (email: string, password: string) => Promise<{ error: any }>;
+  signUp: (email: string, password: string, userData: SignUpUserData) => Promise<{ error: unknown }>;
+  signIn: (email: string, password: string) => Promise<{ error: unknown }>;
   signOut: () => Promise<void>;
   checkWaitlistEmail: (email: string) => Promise<WaitlistCheckResult>;
   forgotPassword: (email: string) => Promise<ForgotPasswordResult>;
-  resetPassword: (newPassword: string) => Promise<{ error: any }>;
+  resetPassword: (newPassword: string) => Promise<{ error: unknown }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -88,16 +116,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    */
   const checkWaitlistEmail = async (email: string): Promise<WaitlistCheckResult> => {
     try {
-      const { data, error } = await supabase.rpc('check_waitlist_email', {
+      const rpcClient = supabase as unknown as CheckWaitlistEmailRpcClient;
+      const { data, error } = await rpcClient.rpc('check_waitlist_email', {
         lookup_email: email,
       });
 
-      if (error) {
+      if (error || !data) {
         console.error('Error checking waitlist email:', error);
         return { status: 'new_user', message: 'Ready to create account.' };
       }
 
-      return data as WaitlistCheckResult;
+      return data;
     } catch (e) {
       console.error('Unexpected error checking waitlist:', e);
       return { status: 'new_user', message: 'Ready to create account.' };
@@ -130,7 +159,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           : undefined;
 
       try {
-        const { data, error } = await supabase.functions.invoke("send-password-reset", {
+        const { error } = await supabase.functions.invoke("send-password-reset", {
           body: { email, redirectTo },
         });
 
@@ -151,7 +180,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       return { error: null };
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("Unexpected forgot password error:", e);
       return { error: e };
     }
@@ -161,16 +190,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    * Set a new password (called from the ResetPassword page after
    * the user clicks the link in their email).
    */
-  const resetPassword = async (newPassword: string): Promise<{ error: any }> => {
+  const resetPassword = async (newPassword: string): Promise<{ error: unknown }> => {
     try {
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       return { error };
-    } catch (e: any) {
+    } catch (e: unknown) {
       return { error: e };
     }
   };
 
-  const signUp = async (email: string, password: string, userData: any) => {
+  const signUp = async (email: string, password: string, userData: SignUpUserData) => {
     const redirectUrl =
       typeof window !== "undefined"
         ? `${window.location.origin}/confirm-email`
@@ -262,9 +291,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Hydrate profile
       try {
         if (userId) {
-          const { error: profileError } = await (supabase as any)
-            .from("profiles")
-            .update({
+          const profilesClient = supabase as unknown as ProfilesUpdateClient;
+          const profileUpdates: Record<string, unknown> = {
               first_name: finalMeta.first_name,
               last_name: finalMeta.last_name,
               display_name: finalMeta.display_name,
@@ -275,7 +303,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               app_preference: finalMeta.app_preference,
               phone_number: finalMeta.phone_number,
               email,
-            })
+            };
+
+          const { error: profileError } = await profilesClient
+            .from("profiles")
+            .update(profileUpdates)
             .eq("user_id", userId);
 
           if (profileError) {
@@ -312,7 +344,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       return { error: null };
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("Unexpected signup error:", e);
       return { error: e };
     }

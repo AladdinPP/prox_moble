@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import type { Json } from '@/integrations/supabase/types';
 
 // --- Types ---
 
@@ -19,6 +20,13 @@ export type CartItem = {
   logo?: string | null;
 };
 
+export type SavedCartItem = {
+  product_name: string;
+  retailer: string;
+  product_price: number;
+  [key: string]: Json | undefined;
+};
+
 // 2. A whole optimized cart saved from CartFinder
 export type SavedOptimizedCart = {
   id: string;
@@ -26,8 +34,49 @@ export type SavedOptimizedCart = {
   total_price: number;
   store_count: number;
   stores: string[]; // Store IDs
-  items: any[];     // The items inside this cart
+  items: SavedCartItem[]; // The items inside this cart
 };
+
+type ShoppingCartRow = {
+  id: string;
+  product_name: string;
+  brand: string | null;
+  product_size: string | null;
+  details: string | null;
+  product_price: number | null;
+  retailer: string | null;
+  image_url: string | null;
+};
+
+type SavedCartRow = {
+  id: string;
+  created_at: string;
+  total_price: number;
+  store_count: number;
+  stores: string[];
+  cart_items: Json;
+};
+
+function toSavedCartItems(raw: Json): SavedCartItem[] {
+  if (!Array.isArray(raw)) return [];
+
+  return raw.flatMap((item) => {
+    if (typeof item !== 'object' || item === null) return [];
+
+    const record = item as Record<string, unknown>;
+    if (typeof record.product_name !== 'string') return [];
+
+    const productPrice = Number(record.product_price);
+    if (Number.isNaN(productPrice)) return [];
+
+    return [{
+      ...record,
+      retailer: typeof record.retailer === 'string' ? record.retailer : '',
+      product_name: record.product_name,
+      product_price: productPrice,
+    } as SavedCartItem];
+  });
+}
 
 type CartContextType = {
   // Manual Items State
@@ -72,15 +121,19 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         .select('*')
         .order('created_at', { ascending: false });
 
+      if (cartError) {
+        console.error("CartContext: Error loading manual cart items", cartError);
+      }
+
       if (cartData) {
-        const mappedItems: CartItem[] = cartData.map((row: any) => ({
+        const mappedItems: CartItem[] = (cartData as ShoppingCartRow[]).map((row) => ({
           id: row.id,
           name: row.product_name,
-          brand: row.brand,
-          size: row.product_size,
-          details: row.details,
-          price: row.product_price,
-          retailer: row.retailer,
+          brand: row.brand ?? undefined,
+          size: row.product_size ?? undefined,
+          details: row.details ?? undefined,
+          price: row.product_price ?? undefined,
+          retailer: row.retailer ?? undefined,
           logo: row.image_url,
         }));
         setItems(mappedItems);
@@ -92,14 +145,18 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         .select('*')
         .order('created_at', { ascending: false });
 
+      if (savedError) {
+        console.error("CartContext: Error loading saved carts", savedError);
+      }
+
       if (savedData) {
-        const mappedSaved: SavedOptimizedCart[] = savedData.map((row: any) => ({
+        const mappedSaved: SavedOptimizedCart[] = (savedData as SavedCartRow[]).map((row) => ({
           id: row.id,
           date: row.created_at,
           total_price: row.total_price,
           store_count: row.store_count,
           stores: row.stores, // Supabase JSONB -> JS Array
-          items: row.cart_items, // Supabase JSONB -> JS Array/Object
+          items: toSavedCartItems(row.cart_items),
         }));
         setSavedCarts(mappedSaved);
       }
@@ -183,7 +240,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           total_price: newCart.total_price,
           store_count: newCart.store_count,
           stores: newCart.stores,
-          cart_items: newCart.items,
+          cart_items: newCart.items as Json,
         })
         .select()
         .single();

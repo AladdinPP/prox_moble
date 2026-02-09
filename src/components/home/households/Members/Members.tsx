@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { ProxCard, ProxCardHeader, ProxCardTitle, ProxCardContent } from '@/components/ProxCard';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -7,13 +7,20 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { Users, User } from 'lucide-react';
 
 interface HouseholdMember {
-    id: string;
-    email: string;
+  id: string;
+  email: string;
   raw_user_meta_data: {
-      first_name?: string;
-      last_name?: string;
+    first_name?: string;
+    last_name?: string;
     household?: number;
   };
+}
+
+interface HouseholdMemberRpcRow {
+  id: string;
+  email?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
 }
 
 export function MembersManagement() {
@@ -24,19 +31,82 @@ export function MembersManagement() {
   const [loading, setLoading] = useState(true);
   const [hasHousehold, setHasHousehold] = useState<boolean | null>(null);
 
-  useEffect(() => {
-    if (user) {
-      checkHouseholdMembership();
-    }
-  }, [user]);
+  const fetchHouseholdMembers = useCallback(async (householdId: number) => {
+    try {
+      // Try to call the database function to get household members
+      const { data: membersData, error: membersError } = await supabase
+        .rpc('get_household_members', { household_id_param: householdId });
 
-  const checkHouseholdMembership = async () => {
+      if (membersError) {
+        console.error('Database function error:', membersError);
+        
+        // If the function doesn't exist, show current user as a fallback
+        if (membersError.code === 'PGRST202') {
+          console.log('Database function not found, showing current user as fallback');
+          const currentUserMember = {
+            id: user?.id || '',
+            email: user?.email || '',
+            raw_user_meta_data: {
+              first_name: user?.user_metadata?.first_name,
+              last_name: user?.user_metadata?.last_name,
+              household: householdId
+            }
+          };
+          setMembers([currentUserMember]);
+          setHasHousehold(true);
+          return;
+        }
+        
+        throw membersError;
+      }
+
+      // Map the data to our interface
+      const householdMembers = ((membersData || []) as HouseholdMemberRpcRow[]).map((member) => ({
+        id: member.id,
+        email: member.email || '',
+        raw_user_meta_data: {
+          first_name: member.first_name,
+          last_name: member.last_name,
+          household: householdId
+        }
+      }));
+
+      setMembers(householdMembers);
+      setHasHousehold(true);
+    } catch (error) {
+      console.error('Error fetching household members:', error);
+      
+      // Fallback: Show current user if there's any error
+      const currentUserMember = {
+        id: user?.id || '',
+        email: user?.email || '',
+        raw_user_meta_data: {
+          first_name: user?.user_metadata?.first_name,
+          last_name: user?.user_metadata?.last_name,
+          household: householdId
+        }
+      };
+      setMembers([currentUserMember]);
+      setHasHousehold(true);
+
+      toast({
+        title: "Note",
+        description: "Showing current user only. Full member list requires database setup.",
+        variant: "default",
+      });
+    }
+  }, [toast, user]);
+
+  const checkHouseholdMembership = useCallback(async () => {
     if (!user) return;
 
     setLoading(true);
     try {
       // Check if user has a household in their user_metadata
       let householdId = user.user_metadata?.household;
+      if (typeof householdId === "string") {
+        householdId = parseInt(householdId, 10);
+      }
       
       // If no household in user_metadata, check if user is head of any household
       if (!householdId) {
@@ -84,73 +154,13 @@ export function MembersManagement() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [fetchHouseholdMembers, toast, user]);
 
-  const fetchHouseholdMembers = async (householdId: number) => {
-    try {
-      // Try to call the database function to get household members
-      const { data: membersData, error: membersError } = await supabase
-        .rpc('get_household_members', { household_id_param: householdId });
-
-      if (membersError) {
-        console.error('Database function error:', membersError);
-        
-        // If the function doesn't exist, show current user as a fallback
-        if (membersError.code === 'PGRST202') {
-          console.log('Database function not found, showing current user as fallback');
-          const currentUserMember = {
-            id: user?.id || '',
-            email: user?.email || '',
-            raw_user_meta_data: {
-              first_name: user?.user_metadata?.first_name,
-              last_name: user?.user_metadata?.last_name,
-              household: householdId
-            }
-          };
-          setMembers([currentUserMember]);
-          setHasHousehold(true);
-          return;
-        }
-        
-        throw membersError;
-      }
-
-      // Map the data to our interface
-      const householdMembers = (membersData || []).map((member: any) => ({
-        id: member.id,
-        email: member.email || '',
-        raw_user_meta_data: {
-          first_name: member.first_name,
-          last_name: member.last_name,
-          household: householdId
-        }
-      }));
-
-      setMembers(householdMembers);
-      setHasHousehold(true);
-    } catch (error) {
-      console.error('Error fetching household members:', error);
-      
-      // Fallback: Show current user if there's any error
-      const currentUserMember = {
-        id: user?.id || '',
-        email: user?.email || '',
-        raw_user_meta_data: {
-          first_name: user?.user_metadata?.first_name,
-          last_name: user?.user_metadata?.last_name,
-          household: householdId
-        }
-      };
-      setMembers([currentUserMember]);
-      setHasHousehold(true);
-
-      toast({
-        title: "Note",
-        description: "Showing current user only. Full member list requires database setup.",
-        variant: "default",
-      });
+  useEffect(() => {
+    if (user) {
+      checkHouseholdMembership();
     }
-  };
+  }, [user, checkHouseholdMembership]);
 
   if (loading) {
     return (

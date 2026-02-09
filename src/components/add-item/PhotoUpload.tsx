@@ -7,10 +7,11 @@ import { ProxCard, ProxCardHeader, ProxCardTitle, ProxCardContent } from '@/comp
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { selectImageWithCapacitor } from '@/utils/capacitorCamera';
+import { supabase } from '@/integrations/supabase/client';
 
 interface PhotoUploadProps {
   onBack: () => void;
-  onSuccess: (items: any[]) => void;
+  onSuccess: (items: unknown[]) => void;
 }
 
 interface ParsedItem {
@@ -18,6 +19,11 @@ interface ParsedItem {
   category: string;
   confirmed: boolean;
 }
+
+type ParsedApiItem = {
+  name?: unknown;
+  category?: unknown;
+};
 
 export function PhotoUpload({ onBack, onSuccess }: PhotoUploadProps) {
   const { toast } = useToast();
@@ -66,28 +72,14 @@ export function PhotoUpload({ onBack, onSuccess }: PhotoUploadProps) {
     try {
       console.log('Starting photo identification process...');
 
-      // Call the correct Supabase function endpoint
-      const response = await fetch(
-        import.meta.env.VITE_SUPABASE_URL + "/functions/v1/dynamic-handler",
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndwZWxmb2ZuZXN0emJ0emlhZ2drIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxMjA4NjUsImV4cCI6MjA3MDY5Njg2NX0.OXpV8sA9sBgm5iUKd19p5uprlyWc4CLYM_Nk1O1VpW4',
-          },
-          body: JSON.stringify({ image: imageData })
-        }
-      );
+      const { data, error } = await supabase.functions.invoke('dynamic-handler', {
+        body: { image: imageData },
+      });
 
-      console.log('Response status:', response.status);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Function error:', errorText);
-        throw new Error(`Function returned status ${response.status}: ${errorText}`);
+      if (error) {
+        throw new Error(error.message || 'Photo processing function failed');
       }
 
-      const data = await response.json();
       console.log('Received data:', data);
 
       if (!data || !data.items) {
@@ -95,9 +87,10 @@ export function PhotoUpload({ onBack, onSuccess }: PhotoUploadProps) {
       }
 
       // Convert API response to our component format
-      const items: ParsedItem[] = data.items.map((item: any) => ({
-        name: item.name,
-        category: item.category,
+      const apiItems: ParsedApiItem[] = Array.isArray(data.items) ? data.items : [];
+      const items: ParsedItem[] = apiItems.map((item) => ({
+        name: typeof item.name === "string" ? item.name : "",
+        category: typeof item.category === "string" ? item.category : "Uncategorized",
         confirmed: true, // Default to confirmed
       }));
 

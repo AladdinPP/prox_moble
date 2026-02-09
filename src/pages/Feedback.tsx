@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { X, Star } from "lucide-react";
+import { getErrorMessage } from "@/lib/error";
 
 const FEEDBACK_CATEGORIES = [
   "Cart Optimization",
@@ -114,12 +115,12 @@ export function Feedback() {
 
       // Navigate to thank you page after successful submission
       navigate("/feedback/thank-you");
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("Feedback submission error:", e);
       toast({
         variant: "destructive",
         title: "Submission failed",
-        description: e.message || "We couldn't submit your feedback. Please try again.",
+        description: getErrorMessage(e, "We couldn't submit your feedback. Please try again."),
       });
     } finally {
       setSubmitting(false);

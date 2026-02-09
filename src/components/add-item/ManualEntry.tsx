@@ -42,7 +42,7 @@ type ManualEntryForm = z.infer<typeof manualEntrySchema>;
 
 interface ManualEntryProps {
   onBack: () => void;
-  onSuccess: (item: any) => void;
+  onSuccess: (item: unknown) => void;
 }
 
 export function ManualEntry({ onBack, onSuccess }: ManualEntryProps) {

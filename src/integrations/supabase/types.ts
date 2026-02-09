@@ -40,6 +40,7 @@ export type Database = {
       }
       items: {
         Row: {
+          brand: string | null
           category: string
           created_at: string | null
           estimate_source: string | null
@@ -56,6 +57,7 @@ export type Database = {
           user_id: string | null
         }
         Insert: {
+          brand?: string | null
           category: string
           created_at?: string | null
           estimate_source?: string | null
@@ -72,6 +74,7 @@ export type Database = {
           user_id?: string | null
         }
         Update: {
+          brand?: string | null
           category?: string
           created_at?: string | null
           estimate_source?: string | null
@@ -115,43 +118,67 @@ export type Database = {
       }
       profiles: {
         Row: {
+          app_preference: string | null
           birthday: string | null
           created_at: string | null
+          date_of_birth: string | null
+          display_name: string | null
           email: string
-          first_name: string
+          first_name: string | null
+          gender_identity: string | null
           grocer_1: string | null
           grocer_2: string | null
-          household_size: number
+          household_size: number | null
           id: string
-          last_name: string
+          last_name: string | null
+          phone_number: string | null
+          preferred_retailers: string[] | null
           push_token: string | null
-          zip_code: string
+          updated_at: string | null
+          user_id: string | null
+          zip_code: string | null
         }
         Insert: {
+          app_preference?: string | null
           birthday?: string | null
           created_at?: string | null
-          email: string
-          first_name: string
+          date_of_birth?: string | null
+          display_name?: string | null
+          email?: string
+          first_name?: string | null
+          gender_identity?: string | null
           grocer_1?: string | null
           grocer_2?: string | null
-          household_size?: number
-          id: string
-          last_name: string
+          household_size?: number | null
+          id?: string
+          last_name?: string | null
+          phone_number?: string | null
+          preferred_retailers?: string[] | null
           push_token?: string | null
-          zip_code: string
+          updated_at?: string | null
+          user_id?: string | null
+          zip_code?: string | null
         }
         Update: {
+          app_preference?: string | null
           birthday?: string | null
           created_at?: string | null
+          date_of_birth?: string | null
+          display_name?: string | null
           email?: string
-          first_name?: string
+          first_name?: string | null
+          gender_identity?: string | null
           grocer_1?: string | null
           grocer_2?: string | null
-          household_size?: number
+          household_size?: number | null
           id?: string
-          last_name?: string
+          last_name?: string | null
+          phone_number?: string | null
+          preferred_retailers?: string[] | null
           push_token?: string | null
-          zip_code?: string
+          updated_at?: string | null
+          user_id?: string | null
+          zip_code?: string | null
         }
         Relationships: []
       }
@@ -197,6 +224,7 @@ export type Database = {
           created_at: string | null
           date_of_birth: string | null
           device_preference: string | null
+          estimated_address: string | null
           email: string
           feedback: string | null
           first_name: string | null
@@ -214,13 +242,14 @@ export type Database = {
           created_at?: string | null
           date_of_birth?: string | null
           device_preference?: string | null
-          email: string
+          estimated_address?: string | null
+          email?: string
           feedback?: string | null
           first_name?: string | null
           id?: string
           last_name?: string | null
           metadata?: Json | null
-          name: string
+          name?: string
           phone_number?: string | null
           preferred_retailers?: string[] | null
           user_id?: string | null
@@ -231,6 +260,7 @@ export type Database = {
           created_at?: string | null
           date_of_birth?: string | null
           device_preference?: string | null
+          estimated_address?: string | null
           email?: string
           feedback?: string | null
           first_name?: string | null
@@ -245,13 +275,316 @@ export type Database = {
         }
         Relationships: []
       }
+      pantry_item_images: {
+        Row: {
+          created_at: string | null
+          image_link: string | null
+          pantry_item_id: string
+          status: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          image_link?: string | null
+          pantry_item_id: string
+          status?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          image_link?: string | null
+          pantry_item_id?: string
+          status?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      pantry_tracker: {
+        Row: {
+          brand: string | null
+          category: string
+          created_at: string | null
+          estimate_source: string | null
+          estimated_expiration_at: string | null
+          estimated_restock_at: string | null
+          guest_owner_id: string | null
+          id: string
+          name: string
+          purchased_at: string
+          quantity: number | null
+          store_name: string | null
+          unit: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          brand?: string | null
+          category: string
+          created_at?: string | null
+          estimate_source?: string | null
+          estimated_expiration_at?: string | null
+          estimated_restock_at?: string | null
+          guest_owner_id?: string | null
+          id?: string
+          name: string
+          purchased_at: string
+          quantity?: number | null
+          store_name?: string | null
+          unit?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          brand?: string | null
+          category?: string
+          created_at?: string | null
+          estimate_source?: string | null
+          estimated_expiration_at?: string | null
+          estimated_restock_at?: string | null
+          guest_owner_id?: string | null
+          id?: string
+          name?: string
+          purchased_at?: string
+          quantity?: number | null
+          store_name?: string | null
+          unit?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      saved_carts: {
+        Row: {
+          cart_items: Json
+          created_at: string | null
+          id: string
+          store_count: number
+          stores: string[]
+          total_price: number
+          user_id: string | null
+        }
+        Insert: {
+          cart_items: Json
+          created_at?: string | null
+          id?: string
+          store_count: number
+          stores: string[]
+          total_price: number
+          user_id?: string | null
+        }
+        Update: {
+          cart_items?: Json
+          created_at?: string | null
+          id?: string
+          store_count?: number
+          stores?: string[]
+          total_price?: number
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      shopping_cart_items: {
+        Row: {
+          brand: string | null
+          created_at: string | null
+          details: string | null
+          id: string
+          image_url: string | null
+          product_name: string
+          product_price: number | null
+          product_size: string | null
+          retailer: string | null
+          user_id: string | null
+        }
+        Insert: {
+          brand?: string | null
+          created_at?: string | null
+          details?: string | null
+          id?: string
+          image_url?: string | null
+          product_name: string
+          product_price?: number | null
+          product_size?: string | null
+          retailer?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          brand?: string | null
+          created_at?: string | null
+          details?: string | null
+          id?: string
+          image_url?: string | null
+          product_name?: string
+          product_price?: number | null
+          product_size?: string | null
+          retailer?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      user_feedback: {
+        Row: {
+          created_at: string | null
+          feedback: string
+          id: string
+          metadata: Json | null
+          page: string | null
+          source: string | null
+          star_rating: number | null
+          waitlist_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          feedback: string
+          id?: string
+          metadata?: Json | null
+          page?: string | null
+          source?: string | null
+          star_rating?: number | null
+          waitlist_id: string
+        }
+        Update: {
+          created_at?: string | null
+          feedback?: string
+          id?: string
+          metadata?: Json | null
+          page?: string | null
+          source?: string | null
+          star_rating?: number | null
+          waitlist_id?: string
+        }
+        Relationships: []
+      }
+      flyer_deals: {
+        Row: {
+          created_at: string | null
+          distance_m: number | null
+          id: number
+          image_link: string | null
+          product_name: string | null
+          product_price: number | null
+          product_size: string | null
+          retailer: string | null
+          retailer_logo_url: string | null
+          zip_code: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          distance_m?: number | null
+          id?: number
+          image_link?: string | null
+          product_name?: string | null
+          product_price?: number | null
+          product_size?: string | null
+          retailer?: string | null
+          retailer_logo_url?: string | null
+          zip_code?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          distance_m?: number | null
+          id?: number
+          image_link?: string | null
+          product_name?: string | null
+          product_price?: number | null
+          product_size?: string | null
+          retailer?: string | null
+          retailer_logo_url?: string | null
+          zip_code?: string | null
+        }
+        Relationships: []
+      }
       // ---------- END waitlist ----------
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      check_waitlist_email: {
+        Args: {
+          lookup_email: string
+        }
+        Returns: {
+          existing_data: Json | null
+          message: string
+          status: string
+        }
+      }
+      get_deal_menu_v8: {
+        Args: {
+          items_to_find: Json
+          min_date: string
+          radius_meters: number
+          user_zip: string
+        }
+        Returns: {
+          distance_m: number | null
+          image_link: string | null
+          product_name: string | null
+          product_price: number | null
+          product_size: string | null
+          retailer: string | null
+          retailer_logo_url: string | null
+          searched_item_name: string | null
+          zip_code: string | null
+        }[]
+      }
+      get_household_items: {
+        Args: {
+          household_id_param: number
+        }
+        Returns: {
+          category: string
+          created_at: string
+          estimate_source: string | null
+          estimated_expiration_at: string | null
+          estimated_restock_at: string | null
+          guest_owner_id: string | null
+          id: string
+          name: string
+          owner_first_name: string | null
+          owner_last_name: string | null
+          purchased_at: string
+          quantity: number | null
+          store_name: string | null
+          unit: string | null
+          updated_at: string | null
+          user_id: string | null
+        }[]
+      }
+      get_household_members: {
+        Args: {
+          household_id_param: number
+        }
+        Returns: {
+          email: string | null
+          first_name: string | null
+          id: string
+          last_name: string | null
+        }[]
+      }
+      search_deals_fuzzy: {
+        Args: {
+          max_distance_meters: number
+          max_rows: number
+          min_date: string
+          radius_meters: number
+          search_terms: string[]
+          user_zip: string
+        }
+        Returns: {
+          distance_m: number | null
+          id: number
+          image_link: string | null
+          product_name: string | null
+          product_price: number | null
+          product_size: string | null
+          retailer: string | null
+          retailer_logo_url: string | null
+          searched_item_name: string | null
+          zip_code: string | null
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never

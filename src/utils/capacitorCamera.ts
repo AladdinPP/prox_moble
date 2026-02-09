@@ -2,10 +2,20 @@
 // This file will only be used when building for mobile platforms
 
 export const isCapacitorAvailable = (): boolean => {
-  return typeof window !== 'undefined' && 
-    ((window as any).Capacitor || 
-     (window as any).CapacitorWeb || 
-     navigator.userAgent.includes('Capacitor'));
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  const globalWindow = window as Window & {
+    Capacitor?: unknown;
+    CapacitorWeb?: unknown;
+  };
+
+  return Boolean(
+    globalWindow.Capacitor ||
+    globalWindow.CapacitorWeb ||
+    navigator.userAgent.includes('Capacitor')
+  );
 };
 
 export const selectImageWithCapacitor = async (): Promise<string | null> => {

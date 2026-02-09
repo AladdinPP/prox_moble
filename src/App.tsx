@@ -82,7 +82,14 @@ function AppRoutes() {
       <Route path="/welcome" element={<Welcome />} />
       <Route path="/auth" element={<Auth />} />
       <Route path="/reset-password" element={<ResetPassword />} />
-      <Route path="/pantry-tracker/edit/:id" element={<EditPantryItem />} />
+      <Route
+        path="/pantry-tracker/edit/:id"
+        element={
+          <ProtectedRoute>
+            <EditPantryItem />
+          </ProtectedRoute>
+        }
+      />
 
       {/* NEW: /home now shows the Cart Finder experience */}
       <Route
