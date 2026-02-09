@@ -226,7 +226,7 @@ export function AddItem() {
             <div className="flex-1">
               <h3 className="text-lg font-semibold text-foreground font-primary mb-1">Upload Photo</h3>
               <p className="text-sm text-muted-foreground font-secondary">
-                Take a photo of your groceries to add multiple items
+                Take a photo of your grocery list or upload anything that shows what you've bought/are looking to buy
               </p>
             </div>
           </ProxCardContent>
