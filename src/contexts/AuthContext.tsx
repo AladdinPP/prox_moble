@@ -42,14 +42,6 @@ type CheckWaitlistEmailRpcClient = {
   ) => Promise<{ data: WaitlistCheckResult | null; error: unknown }>;
 };
 
-type ProfilesUpdateClient = {
-  from: (table: "profiles") => {
-    update: (values: Record<string, unknown>) => {
-      eq: (column: string, value: string) => Promise<{ error: unknown }>;
-    };
-  };
-};
-
 interface AuthContextType {
   user: User | null;
   session: Session | null;
@@ -200,9 +192,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signUp = async (email: string, password: string, userData: SignUpUserData) => {
+    const normalizedEmail = email.trim().toLowerCase();
     const redirectUrl =
       typeof window !== "undefined"
-        ? `${window.location.origin}/confirm-email`
+        ? `${window.location.origin}/auth?mode=signin`
         : undefined;
 
     // Build preferred_retailers array from grocer_1/2/3
@@ -217,7 +210,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }`.trim();
 
     const finalMeta = {
-      email,
+      email: normalizedEmail,
       first_name: userData.first_name,
       last_name: userData.last_name,
       phone_number: userData.phone_number,
@@ -231,7 +224,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const { data, error } = await supabase.auth.signUp({
-        email,
+        email: normalizedEmail,
         password,
         options: {
           ...(redirectUrl ? { emailRedirectTo: redirectUrl } : {}),
@@ -261,8 +254,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .from("waitlist")
           .upsert(
             {
-              email,
-              name: displayName || email,
+              email: normalizedEmail,
+              name: displayName || normalizedEmail,
               user_id: userId,
               zip_code: userData.zip_code ?? null,
               preferred_retailers:
@@ -291,24 +284,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Hydrate profile
       try {
         if (userId) {
-          const profilesClient = supabase as unknown as ProfilesUpdateClient;
-          const profileUpdates: Record<string, unknown> = {
+          const profileUpsert = {
+              id: userId,
+              user_id: userId,
               first_name: finalMeta.first_name,
               last_name: finalMeta.last_name,
               display_name: finalMeta.display_name,
+              birthday: finalMeta.date_of_birth,
               date_of_birth: finalMeta.date_of_birth,
               gender_identity: finalMeta.gender_identity,
               zip_code: finalMeta.zip_code,
+              grocer_1: userData.grocer_1 ?? null,
+              grocer_2: userData.grocer_2 ?? null,
+              household_size: userData.household_size ?? null,
               preferred_retailers: finalMeta.preferred_retailers,
               app_preference: finalMeta.app_preference,
               phone_number: finalMeta.phone_number,
-              email,
+              email: normalizedEmail,
+              updated_at: new Date().toISOString(),
             };
 
-          const { error: profileError } = await profilesClient
+          const { error: profileError } = await supabase
             .from("profiles")
-            .update(profileUpdates)
-            .eq("user_id", userId);
+            .upsert(profileUpsert, { onConflict: "id" });
 
           if (profileError) {
             console.error("Error updating profile:", profileError);
@@ -322,8 +320,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         await supabase.functions.invoke("send-welcome-email", {
           body: {
-            name: displayName || userData.first_name || email,
-            email,
+            name: displayName || userData.first_name || normalizedEmail,
+            email: normalizedEmail,
           },
         });
 
@@ -331,7 +329,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           body: {
             firstName: userData.first_name,
             lastName: userData.last_name,
-            email,
+            email: normalizedEmail,
             dateOfBirth: finalMeta.date_of_birth,
             genderIdentity: finalMeta.gender_identity,
             zipCode: finalMeta.zip_code,

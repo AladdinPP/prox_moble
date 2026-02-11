@@ -52,6 +52,7 @@ export function Auth() {
         <SignUp
           onSuccess={handleSignUpSuccess}
           onSwitchToSignIn={(email?: string) => handleSwitchMode('signin', email)}
+          onBackToWelcome={() => navigate('/welcome')}
         />
       )}
     </div>
