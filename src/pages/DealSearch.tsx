@@ -12,6 +12,7 @@ import { useCart } from '@/contexts/CartContext';
 import { FloatingCart } from '@/components/FloatingCart';
 import { useToast } from '@/hooks/use-toast';
 import { BottomNav } from "@/components/BottomNav";
+import { getErrorMessage } from '@/lib/error';
 
 type DealResult = {
   id: number;
@@ -201,9 +202,9 @@ export function DealSearch() {
         setResults([]);
       }
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error fetching deals:', err);
-      setError(err.message || 'Failed to fetch deals.');
+      setError(getErrorMessage(err, 'Failed to fetch deals.'));
     } finally {
       setLoading(false);
     }

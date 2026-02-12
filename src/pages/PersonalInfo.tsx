@@ -16,6 +16,8 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Eye, EyeOff, ChevronLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { getErrorMessage } from "@/lib/error";
+import type { Tables } from "@/integrations/supabase/types";
 
 const deviceOptions = ["web", "mobile", "both"] as const;
 
@@ -33,7 +35,7 @@ const personalInfoSchema = z
       .or(z.literal("")),
     confirmPassword: z.string().optional().or(z.literal("")),
     devicePreference: z.enum(deviceOptions, {
-      required_error: "Please choose a device preference",
+      message: "Please choose a device preference",
     }),
   })
   .refine((data) => !data.newPassword || data.newPassword === data.confirmPassword, {
@@ -90,7 +92,7 @@ export function PersonalInfo() {
           console.error("Error fetching waitlist:", waitlistError);
         }
 
-        const wl = waitlistRow || {};
+        const wl: Partial<Tables<"waitlist">> = waitlistRow ?? {};
 
         reset({
           firstName:
@@ -176,7 +178,7 @@ export function PersonalInfo() {
       }
 
       // 3) Update auth user (email, password, metadata)
-      const authUpdate: any = {
+      const authUpdate: Parameters<typeof supabase.auth.updateUser>[0] = {
         data: {
           first_name: data.firstName,
           last_name: data.lastName,
@@ -207,12 +209,12 @@ export function PersonalInfo() {
 
       // Navigate back to account page
       navigate("/account");
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("Personal info update error:", e);
       toast({
         variant: "destructive",
         title: "Update failed",
-        description: e.message || "We couldn't save your changes. Please try again.",
+        description: getErrorMessage(e, "We couldn't save your changes. Please try again."),
       });
     } finally {
       setSaving(false);

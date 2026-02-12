@@ -15,6 +15,8 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { ChevronLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { getErrorMessage } from "@/lib/error";
+import type { Tables } from "@/integrations/supabase/types";
 
 const GROCERY_STORES = [
   "Albertsons",
@@ -88,7 +90,7 @@ export function PreferredRetailers() {
           console.error("Error fetching waitlist:", waitlistError);
         }
 
-        const wl = waitlistRow || {};
+        const wl: Partial<Tables<"waitlist">> = waitlistRow ?? {};
 
         const preferredRetailers =
           (wl.preferred_retailers as string[] | null) ?? [];
@@ -152,7 +154,7 @@ export function PreferredRetailers() {
       }
 
       // 3) Update auth user metadata
-      const authUpdate: any = {
+      const authUpdate: Parameters<typeof supabase.auth.updateUser>[0] = {
         data: {
           preferred_retailers: data.preferredRetailers,
         },
@@ -172,12 +174,12 @@ export function PreferredRetailers() {
 
       // Navigate back to account page
       navigate("/account");
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("Preferences update error:", e);
       toast({
         variant: "destructive",
         title: "Update failed",
-        description: e.message || "We couldn't save your changes. Please try again.",
+        description: getErrorMessage(e, "We couldn't save your changes. Please try again."),
       });
     } finally {
       setSaving(false);

@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ProxCard, ProxCardHeader, ProxCardTitle, ProxCardContent } from '@/components/ProxCard';
 import { useToast } from '@/hooks/use-toast';
+import { getErrorMessage } from '@/lib/error';
 
 const passwordSchema = z
   .object({
@@ -85,7 +86,7 @@ export function ResetPassword() {
       if (error) {
         toast({
           title: "Reset failed",
-          description: error.message || "Failed to update password. Please try again.",
+          description: getErrorMessage(error, "Failed to update password. Please try again."),
           variant: "destructive",
         });
       } else {

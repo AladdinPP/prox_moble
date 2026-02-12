@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ProxCard, ProxCardHeader, ProxCardTitle, ProxCardContent } from '@/components/ProxCard';
 import { useToast } from '@/hooks/use-toast';
+import { getErrorMessage } from '@/lib/error';
 
 const signInSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
@@ -60,11 +61,13 @@ export function SignIn({ onSuccess, onSwitchToSignUp, prefillEmail }: SignInProp
       const { error } = await signIn(data.email, data.password);
 
       if (error) {
+        const signInErrorMessage = getErrorMessage(error, 'Sign in failed.');
+
         // If credentials are invalid, check whether the account even exists
         // to give a more helpful error message
         if (
-          error.message?.toLowerCase().includes('invalid login credentials') ||
-          error.message?.toLowerCase().includes('invalid credentials')
+          signInErrorMessage.toLowerCase().includes('invalid login credentials') ||
+          signInErrorMessage.toLowerCase().includes('invalid credentials')
         ) {
           try {
             const status = await checkWaitlistEmail(data.email);
@@ -91,7 +94,7 @@ export function SignIn({ onSuccess, onSwitchToSignUp, prefillEmail }: SignInProp
 
         toast({
           title: "Sign in failed",
-          description: error.message,
+          description: signInErrorMessage,
           variant: "destructive",
         });
       } else {
@@ -152,7 +155,7 @@ export function SignIn({ onSuccess, onSwitchToSignUp, prefillEmail }: SignInProp
       if (result.error) {
         toast({
           title: "Reset failed",
-          description: result.error.message || "Failed to send reset email. Please try again.",
+          description: getErrorMessage(result.error, "Failed to send reset email. Please try again."),
           variant: "destructive",
         });
       } else {

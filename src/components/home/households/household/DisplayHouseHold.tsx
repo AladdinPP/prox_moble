@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { ProxCard, ProxCardContent, ProxCardHeader, ProxCardTitle } from '@/components/ProxCard';
 import { useAuth } from '@/contexts/AuthContext';
@@ -29,13 +29,7 @@ export function DisplayHouseHold() {
   const [leaving, setLeaving] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
-    if (user) {
-      fetchHouseholdData();
-    }
-  }, [user]);
-
-  const fetchHouseholdData = async () => {
+  const fetchHouseholdData = useCallback(async () => {
     if (!user) return;
 
     setLoading(true);
@@ -90,7 +84,13 @@ export function DisplayHouseHold() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast, user]);
+
+  useEffect(() => {
+    if (user) {
+      fetchHouseholdData();
+    }
+  }, [user, fetchHouseholdData]);
 
   const handleLeaveHousehold = async () => {
     if (!user || !household) return;

@@ -15,6 +15,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { AddCategory } from '@/components/home/AddCategory';
 import { DeleteCategory } from '@/components/home/DeleteCategory';
 import { BottomNav } from "@/components/BottomNav";
+import type { GuestItem } from '@/stores/guestStore';
 
 interface Item {
   id: string;
@@ -40,6 +41,23 @@ interface Item {
   owner_first_name?: string;
   owner_last_name?: string;
 }
+
+type HouseholdMember = { id: string; first_name: string; last_name: string };
+
+type HouseholdMemberRow = {
+  id: string;
+  first_name?: string | null;
+  last_name?: string | null;
+};
+
+type PantryItemImageRow = {
+  pantry_item_id: string;
+  image_link?: string | null;
+};
+
+type ResolveImagesResponse = {
+  results?: Record<string, string | null>;
+};
 
 type ExpirationStatus = 'expired' | 'soon' | 'fresh';
 
@@ -81,6 +99,21 @@ function formatUnit(unit?: string | null) {
   return map[unit] ?? unit;
 }
 
+function normalizeGuestItem(item: GuestItem): Item {
+  return {
+    id: item.id,
+    name: item.name,
+    category: item.category,
+    purchased_at: item.purchased_at,
+    estimated_expiration_at: item.estimated_expiration_at ?? null,
+    estimated_restock_at: item.estimated_restock_at ?? null,
+    store_name: item.store_name ?? null,
+    created_at: item.created_at,
+    updated_at: item.updated_at,
+    estimate_source: item.estimate_source ?? null,
+  };
+}
+
 export function PantryTracker() {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
@@ -96,7 +129,7 @@ export function PantryTracker() {
   const [loading, setLoading] = useState(false);
 
   const [activeTab, setActiveTab] = useState<'my-items' | 'household-items'>('my-items');
-  const [householdMembers, setHouseholdMembers] = useState<{ id: string; first_name: string; last_name: string }[]>([]);
+  const [householdMembers, setHouseholdMembers] = useState<HouseholdMember[]>([]);
   const [householdLoading, setHouseholdLoading] = useState(false);
 
   // image cache map: pantry_item_id -> image_link (or null)
@@ -104,7 +137,7 @@ export function PantryTracker() {
 
   useEffect(() => {
     if (isGuest) {
-      setItems(guestItems as any);
+      setItems(guestItems.map(normalizeGuestItem));
       return;
     }
 
@@ -130,14 +163,13 @@ export function PantryTracker() {
     setLoading(true);
     try {
       const { data, error } = await supabase
-        // @ts-expect-error
         .from('pantry_tracker')
         .select('id, name, brand, category, purchased_at, estimated_expiration_at, estimated_restock_at, store_name, quantity, unit, created_at, updated_at, user_id, guest_owner_id, estimate_source')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setItems((data || []) as any);
+      setItems((data || []) as Item[]);
     } catch (error) {
       toast({ title: "Error", description: "Failed to load items", variant: "destructive" });
     } finally {
@@ -158,7 +190,7 @@ export function PantryTracker() {
 
       const householdId = typeof userHousehold === 'string' ? parseInt(userHousehold, 10) : userHousehold;
 
-      const { data: membersData, error: membersError } = await (supabase as any)
+      const { data: membersData, error: membersError } = await supabase
         .rpc('get_household_members', { household_id_param: householdId });
 
       if (membersError) {
@@ -173,11 +205,11 @@ export function PantryTracker() {
         throw membersError;
       }
 
-      const members = (membersData as any[])?.map((m: any) => ({
+      const members = ((membersData || []) as HouseholdMemberRow[]).map((m) => ({
         id: m.id,
         first_name: m.first_name || 'Unknown',
         last_name: m.last_name || 'User'
-      })) || [];
+      }));
 
       setHouseholdMembers(members);
     } catch (error) {
@@ -195,7 +227,6 @@ export function PantryTracker() {
       const memberIds = householdMembers.map(m => m.id);
 
       const { data, error } = await supabase
-        // @ts-expect-error
         .from('pantry_tracker')
         .select('id, name, brand, category, purchased_at, estimated_expiration_at, estimated_restock_at, store_name, quantity, unit, created_at, updated_at, user_id, guest_owner_id, estimate_source')
         .in('user_id', memberIds)
@@ -203,12 +234,12 @@ export function PantryTracker() {
 
       if (error) throw error;
 
-      const itemsWithOwners = (data || []).map((item: any) => {
+      const itemsWithOwners = ((data || []) as Item[]).map((item) => {
         const owner = householdMembers.find(m => m.id === item.user_id);
         return { ...item, owner_first_name: owner?.first_name, owner_last_name: owner?.last_name };
       });
 
-      setHouseholdItems(itemsWithOwners as any);
+      setHouseholdItems(itemsWithOwners);
     } catch (error) {
       toast({ title: "Error", description: "Failed to load household items", variant: "destructive" });
     } finally {
@@ -230,7 +261,6 @@ export function PantryTracker() {
 
     try {
       const { error } = await supabase
-        // @ts-expect-error
         .from('pantry_tracker')
         .delete()
         .eq('id', itemId);
@@ -241,7 +271,6 @@ export function PantryTracker() {
 
       // also delete cached image row (optional; FK cascade handles only if pantry item deleted)
       await supabase
-        // @ts-expect-error
         .from('pantry_item_images')
         .delete()
         .eq('pantry_item_id', itemId);
@@ -297,21 +326,21 @@ export function PantryTracker() {
       try {
         // Fetch cached image rows
         const { data: cacheRows, error } = await supabase
-          // @ts-expect-error
           .from('pantry_item_images')
           .select('pantry_item_id, image_link, status, updated_at')
           .in('pantry_item_id', visibleIds);
 
         if (error) throw error;
 
+        const rows = (cacheRows || []) as PantryItemImageRow[];
         const nextMap: Record<string, string | null> = { ...imagesById };
-        (cacheRows || []).forEach((r: any) => {
+        rows.forEach((r) => {
           nextMap[r.pantry_item_id] = r.image_link ?? null;
         });
         setImagesById(nextMap);
 
         // Find IDs that are missing from cacheRows OR have no image_link (null)
-        const cachedIds = new Set((cacheRows || []).map((r: any) => r.pantry_item_id));
+        const cachedIds = new Set(rows.map((r) => r.pantry_item_id));
         const missingIds = visibleIds.filter((id) => !cachedIds.has(id));
 
         // Only resolve missing cache rows (not every null) — null could be "not_found" and still valid
@@ -322,7 +351,7 @@ export function PantryTracker() {
 
           if (fnErr) throw fnErr;
 
-          const results = fnData?.results || {};
+          const results = ((fnData as ResolveImagesResponse | null)?.results) || {};
           const merged: Record<string, string | null> = { ...nextMap };
           Object.keys(results).forEach((id) => {
             merged[id] = results[id] ?? null;

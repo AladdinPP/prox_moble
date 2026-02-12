@@ -31,6 +31,8 @@ import { useCart } from "@/contexts/CartContext";
 import { useToast } from "@/hooks/use-toast";
 import { BottomNav } from "@/components/BottomNav";
 import { useAuth } from "@/contexts/AuthContext";
+import { getErrorMessage } from "@/lib/error";
+import type { Database, Tables } from "@/integrations/supabase/types";
 
 // --- Types ---
 type EditableCartItem = {
@@ -64,7 +66,10 @@ type OptimizedCartItem = {
   retailer_logo_url: string | null;
 };
 
-const PLACEHOLDER_IMG = "https://via.placeholder.com/100x100.png?text=No+Image";
+type FlyerDealRow = Tables<"flyer_deals">;
+type SearchDealsRow = Database["public"]["Functions"]["search_deals_fuzzy"]["Returns"][number];
+
+const PLACEHOLDER_IMG = "/placeholder.svg";
 
 const normalizeImageUrl = (url: string | null): string => {
   if (!url) return PLACEHOLDER_IMG;
@@ -105,6 +110,39 @@ const FEATURED_CATEGORIES: FeaturedCategory[] = [
   { key: "beverages", label: "Beverages", keywords: ["soda", "juice", "water", "coffee", "tea"] },
   { key: "frozen", label: "Frozen", keywords: ["ice cream", "pizza", "frozen vegetables"] },
 ];
+
+const buildFeaturedByCategory = (
+  deals: OptimizedCartItem[]
+): Record<string, OptimizedCartItem[]> => {
+  const grouped: Record<string, OptimizedCartItem[]> = {};
+
+  for (const cat of FEATURED_CATEGORIES) {
+    const matching = deals.filter((d) => matchesCategory(d, cat));
+
+    const anchorPicks: OptimizedCartItem[] = [];
+    for (const kw of cat.keywords) {
+      const kwMatches = matching.filter((d) =>
+        d.product_name.toLowerCase().includes(kw.toLowerCase())
+      );
+      if (kwMatches.length > 0) {
+        kwMatches.sort((a, b) => a.product_price - b.product_price);
+        anchorPicks.push(kwMatches[0]);
+      }
+    }
+
+    const fillPicks = matching
+      .filter((d) => !anchorPicks.some((a) => a.product_name === d.product_name))
+      .sort(
+        (a, b) =>
+          valueScore(a.product_price, a.product_size) -
+          valueScore(b.product_price, b.product_size)
+      );
+
+    grouped[cat.key] = [...anchorPicks, ...fillPicks].slice(0, FEATURED_LIMIT);
+  }
+
+  return grouped;
+};
 
 // Helper: parse a product size string to a numeric "unit amount" (for value calculation)
 function parseUnitAmount(size: string | null): number | null {
@@ -585,14 +623,23 @@ export function Deals() {
     Record<string, { atStart: boolean; atEnd: boolean }>
   >({});
   const carouselRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const featuredRequestIdRef = useRef(0);
 
   // --- Default zip logic (guest: 90064, signed-in: waitlist.zip_code) ---
   const [resolvedDefaultZip, setResolvedDefaultZip] = useState<string>("90064");
   const effectiveZip = useMemo(() => {
     const z = zipcode.trim();
-    if (z) return z;
+    if (/^\d{5}$/.test(z)) return z;
     return resolvedDefaultZip || "90064";
   }, [zipcode, resolvedDefaultZip]);
+
+  const hasFeaturedDeals = useMemo(
+    () =>
+      FEATURED_CATEGORIES.some(
+        (cat) => (featuredByCategory[cat.key]?.length ?? 0) > 0
+      ),
+    [featuredByCategory]
+  );
 
   useEffect(() => {
     const resolveZip = async () => {
@@ -622,7 +669,7 @@ export function Deals() {
 
   const cartTotal = useMemo(() => {
     const total = items.reduce(
-      (sum: number, it: any) => sum + (Number(it?.price) || 0),
+      (sum: number, it) => sum + (Number(it?.price) || 0),
       0
     );
     return total;
@@ -682,7 +729,7 @@ export function Deals() {
 
     return () => {
       document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("touchstart", onPointerDown as any);
+      document.removeEventListener("touchstart", onPointerDown as EventListener);
       document.removeEventListener("keydown", onKeyDown);
     };
   }, [locationPanelOpen, retailersOpenPanel]);
@@ -693,12 +740,13 @@ export function Deals() {
   useEffect(() => {
     if (initialSearchDone) return; // only fetch when in browse mode
 
+    const requestId = ++featuredRequestIdRef.current;
+
     const fetchFeatured = async () => {
       setLoadingFeatured(true);
       try {
         // Query flyer_deals for featured items
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: rawDeals, error } = await (supabase as any)
+        const { data: rawDeals, error } = await supabase
           .from("flyer_deals")
           .select("*")
           .eq("zip_code", effectiveZip)
@@ -709,59 +757,44 @@ export function Deals() {
 
         if (error) throw error;
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const deals = (rawDeals || [])
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .filter((d: any) => d?.product_name && d?.product_price != null)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .map((d: any) => ({
+          .filter(
+            (d): d is FlyerDealRow & { product_name: string; product_price: number } =>
+              typeof d.product_name === "string" &&
+              d.product_price !== null &&
+              !Number.isNaN(Number(d.product_price))
+          )
+          .map((d) => ({
             searched_item: "",
             product_name: d.product_name,
             product_price: Number(d.product_price),
-            retailer: d.retailer || "",
-            zip_code: d.zip_code || effectiveZip,
+            retailer: d.retailer ?? "",
+            zip_code: d.zip_code ?? effectiveZip,
             distance_m: 0,
             product_size: d.product_size ?? null,
             image_link: d.image_link ?? null,
             retailer_logo_url: d.retailer_logo_url ?? null,
           }));
 
-        // Group by category
-        const grouped: Record<string, OptimizedCartItem[]> = {};
-
-        for (const cat of FEATURED_CATEGORIES) {
-          const matching = deals.filter((d: OptimizedCartItem) => matchesCategory(d, cat));
-
-          // Anchor picks: cheapest deal for each keyword
-          const anchorPicks: OptimizedCartItem[] = [];
-          for (const kw of cat.keywords) {
-            const kwMatches = matching.filter((d: OptimizedCartItem) =>
-              d.product_name.toLowerCase().includes(kw.toLowerCase())
-            );
-            if (kwMatches.length > 0) {
-              kwMatches.sort((a: OptimizedCartItem, b: OptimizedCartItem) => a.product_price - b.product_price);
-              anchorPicks.push(kwMatches[0]);
-            }
-          }
-
-          // Fill picks: best value score
-          const fillPicks = matching
-            .filter((d: OptimizedCartItem) => !anchorPicks.some((a: OptimizedCartItem) => a.product_name === d.product_name))
-            .sort((a: OptimizedCartItem, b: OptimizedCartItem) => valueScore(a.product_price, a.product_size) - valueScore(b.product_price, b.product_size));
-
-          const combined = [...anchorPicks, ...fillPicks].slice(0, FEATURED_LIMIT);
-          grouped[cat.key] = combined;
-        }
-
-        setFeaturedByCategory(grouped);
+        if (requestId !== featuredRequestIdRef.current) return;
+        setFeaturedByCategory(buildFeaturedByCategory(deals));
       } catch (err) {
+        if (requestId !== featuredRequestIdRef.current) return;
         console.error("Failed to fetch featured deals:", err);
       } finally {
-        setLoadingFeatured(false);
+        if (requestId === featuredRequestIdRef.current) {
+          setLoadingFeatured(false);
+        }
       }
     };
 
     fetchFeatured();
+
+    return () => {
+      if (featuredRequestIdRef.current === requestId) {
+        featuredRequestIdRef.current += 1;
+      }
+    };
   }, [initialSearchDone, effectiveZip]);
 
   // --- Carousel scroll helpers ---
@@ -800,10 +833,10 @@ export function Deals() {
 
   // Refresh featured deals (for browse mode)
   const refreshFeatured = async () => {
+    const requestId = ++featuredRequestIdRef.current;
     setLoadingFeatured(true);
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: rawDeals, error } = await (supabase as any)
+      const { data: rawDeals, error } = await supabase
         .from("flyer_deals")
         .select("*")
         .eq("zip_code", effectiveZip)
@@ -814,52 +847,34 @@ export function Deals() {
 
       if (error) throw error;
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const deals = (rawDeals || [])
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .filter((d: any) => d?.product_name && d?.product_price != null)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .map((d: any) => ({
+        .filter(
+          (d): d is FlyerDealRow & { product_name: string; product_price: number } =>
+            typeof d.product_name === "string" &&
+            d.product_price !== null &&
+            !Number.isNaN(Number(d.product_price))
+        )
+        .map((d) => ({
           searched_item: "",
           product_name: d.product_name,
           product_price: Number(d.product_price),
-          retailer: d.retailer || "",
-          zip_code: d.zip_code || effectiveZip,
+          retailer: d.retailer ?? "",
+          zip_code: d.zip_code ?? effectiveZip,
           distance_m: 0,
           product_size: d.product_size ?? null,
           image_link: d.image_link ?? null,
           retailer_logo_url: d.retailer_logo_url ?? null,
         }));
 
-      const grouped: Record<string, OptimizedCartItem[]> = {};
-
-      for (const cat of FEATURED_CATEGORIES) {
-        const matching = deals.filter((d: OptimizedCartItem) => matchesCategory(d, cat));
-
-        const anchorPicks: OptimizedCartItem[] = [];
-        for (const kw of cat.keywords) {
-          const kwMatches = matching.filter((d: OptimizedCartItem) =>
-            d.product_name.toLowerCase().includes(kw.toLowerCase())
-          );
-          if (kwMatches.length > 0) {
-            kwMatches.sort((a: OptimizedCartItem, b: OptimizedCartItem) => a.product_price - b.product_price);
-            anchorPicks.push(kwMatches[0]);
-          }
-        }
-
-        const fillPicks = matching
-          .filter((d: OptimizedCartItem) => !anchorPicks.some((a: OptimizedCartItem) => a.product_name === d.product_name))
-          .sort((a: OptimizedCartItem, b: OptimizedCartItem) => valueScore(a.product_price, a.product_size) - valueScore(b.product_price, b.product_size));
-
-        const combined = [...anchorPicks, ...fillPicks].slice(0, FEATURED_LIMIT);
-        grouped[cat.key] = combined;
-      }
-
-      setFeaturedByCategory(grouped);
+      if (requestId !== featuredRequestIdRef.current) return;
+      setFeaturedByCategory(buildFeaturedByCategory(deals));
     } catch (err) {
+      if (requestId !== featuredRequestIdRef.current) return;
       console.error("Failed to refresh featured deals:", err);
     } finally {
-      setLoadingFeatured(false);
+      if (requestId === featuredRequestIdRef.current) {
+        setLoadingFeatured(false);
+      }
     }
   };
 
@@ -1056,7 +1071,6 @@ export function Deals() {
   const handleRunSearch = async (itemsToFind: EditableCartItem[]) => {
     setLoading(true);
     setError(null);
-    setSingleItemDeals([]);
     setSingleItemPage(1);
     setSortOption("none");
 
@@ -1103,19 +1117,19 @@ export function Deals() {
 
       if (rpcError) throw rpcError;
 
-      const rawDeals = (rawData as any[]) || [];
+      const rawDeals = (rawData || []) as SearchDealsRow[];
 
       // Filter out null prices and normalize
       const normalizedDeals: DealMenuItem[] = rawDeals
-        .filter((d) => d?.product_name != null)
         .filter(
-          (d) =>
-            d?.product_price != null &&
+          (d): d is SearchDealsRow & { product_name: string; product_price: number } =>
+            typeof d.product_name === "string" &&
+            d.product_price != null &&
             !Number.isNaN(Number(d.product_price))
         )
         .map((d) => ({
-          retailer: d.retailer,
-          zip_code: d.zip_code,
+          retailer: d.retailer ?? "",
+          zip_code: d.zip_code ?? zipForRpc,
           searched_item_name: searchTerms[0],
           product_name: d.product_name,
           product_price: Number(d.product_price),
@@ -1184,9 +1198,9 @@ export function Deals() {
       });
 
       setSingleItemDeals(normalized);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Search Error:", err);
-      setError(err.message || "Failed to search deals.");
+      setError(getErrorMessage(err, "Failed to search deals."));
     } finally {
       setLoading(false);
     }
@@ -1693,127 +1707,138 @@ export function Deals() {
           {/* Featured Deals - Browse Mode (before search) */}
           {!initialSearchDone && (
             <div className="space-y-6">
-              {loadingFeatured && (
+              {loadingFeatured && !hasFeaturedDeals && (
                 <p className="text-sm text-muted-foreground py-8 text-center">
                   Loading featured deals…
                 </p>
               )}
 
-              {!loadingFeatured &&
-                FEATURED_CATEGORIES.map((cat) => {
-                  const items = featuredByCategory[cat.key] || [];
-                  if (items.length === 0) return null;
+              {loadingFeatured && hasFeaturedDeals && (
+                <p className="text-xs text-muted-foreground text-center">
+                  Refreshing deals…
+                </p>
+              )}
 
-                  const scrollState = carouselScrollStates[cat.key] || {
-                    atStart: true,
-                    atEnd: false,
-                  };
+              {!loadingFeatured && !hasFeaturedDeals && (
+                <p className="text-sm text-muted-foreground py-8 text-center">
+                  No featured deals yet for this area. Try refreshing your search settings.
+                </p>
+              )}
 
-                  return (
-                    <div
-                      key={cat.key}
-                      className="rounded-2xl border border-border/60 bg-card shadow-soft p-4"
-                    >
-                      <div className="flex items-center justify-between mb-3">
-                        <h2 className="text-lg font-semibold">{cat.label}</h2>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleCarouselScroll(cat.key, "left")}
-                            disabled={scrollState.atStart}
-                            className="h-8 w-8 rounded-full border border-border bg-background flex items-center justify-center disabled:opacity-30 hover:bg-muted transition"
-                            aria-label="Scroll left"
-                          >
-                            <ChevronLeft className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => handleCarouselScroll(cat.key, "right")}
-                            disabled={scrollState.atEnd}
-                            className="h-8 w-8 rounded-full border border-border bg-background flex items-center justify-center disabled:opacity-30 hover:bg-muted transition"
-                            aria-label="Scroll right"
-                          >
-                            <ChevronRight className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </div>
+              {FEATURED_CATEGORIES.map((cat) => {
+                const items = featuredByCategory[cat.key] || [];
+                if (items.length === 0) return null;
 
-                      <div
-                        ref={(el) => {
-                          carouselRefs.current[cat.key] = el;
-                        }}
-                        onScroll={() => checkScrollPosition(cat.key)}
-                        className="flex gap-3 overflow-x-auto scrollbar-hide scroll-smooth"
-                      >
-                        {items.map((item, idx) => {
-                          const key = `${item.product_name}-${item.retailer}-${item.zip_code}-${item.product_price}-${idx}`;
-                          const isAdded = addedItems.has(key);
+                const scrollState = carouselScrollStates[cat.key] || {
+                  atStart: true,
+                  atEnd: false,
+                };
 
-                          return (
-                            <div
-                              key={key}
-                              className="flex-shrink-0 w-[160px] rounded-xl border border-border/60 bg-background/50 p-3 relative transition-shadow hover:shadow-md"
-                            >
-                              <img
-                                src={normalizeImageUrl(item.image_link)}
-                                alt={item.product_name}
-                                className="h-28 w-full rounded-md border bg-gray-50 object-cover"
-                                onError={(e) => {
-                                  e.currentTarget.src = PLACEHOLDER_IMG;
-                                }}
-                              />
-
-                              <div className="mt-2 pb-8">
-                                <p className="text-sm font-semibold text-foreground line-clamp-2">
-                                  {item.product_name}
-                                </p>
-
-                                {item.product_size && (
-                                  <p className="text-xs text-muted-foreground truncate">
-                                    {item.product_size}
-                                  </p>
-                                )}
-
-                                <p className="mt-1 text-lg font-bold text-green-600">
-                                  ${Number(item.product_price).toFixed(2)}
-                                </p>
-
-                                <div className="flex items-center gap-1 mt-1">
-                                  {item.retailer_logo_url && (
-                                    <img
-                                      src={item.retailer_logo_url}
-                                      alt="logo"
-                                      className="h-4 w-auto object-contain"
-                                    />
-                                  )}
-                                  <p className="text-xs text-muted-foreground truncate">
-                                    {item.retailer}
-                                  </p>
-                                </div>
-                              </div>
-
-                              <div className="absolute bottom-3 right-3">
-                                <Button
-                                  size="icon"
-                                  className={`h-8 w-8 rounded-full shadow-md transition-all ${
-                                    isAdded
-                                      ? "bg-prox text-white hover:bg-prox-hover"
-                                      : "bg-white text-green-600 border border-green-200 hover:bg-green-50"
-                                  }`}
-                                  onClick={() => handleAddDealToCart(item)}
-                                >
-                                  {isAdded ? (
-                                    <Check className="h-4 w-4" />
-                                  ) : (
-                                    <Plus className="h-4 w-4" />
-                                  )}
-                                </Button>
-                              </div>
-                            </div>
-                          );
-                        })}
+                return (
+                  <div
+                    key={cat.key}
+                    className="rounded-2xl border border-border/60 bg-card shadow-soft p-4"
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                      <h2 className="text-lg font-semibold">{cat.label}</h2>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleCarouselScroll(cat.key, "left")}
+                          disabled={scrollState.atStart}
+                          className="h-8 w-8 rounded-full border border-border bg-background flex items-center justify-center disabled:opacity-30 hover:bg-muted transition"
+                          aria-label="Scroll left"
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => handleCarouselScroll(cat.key, "right")}
+                          disabled={scrollState.atEnd}
+                          className="h-8 w-8 rounded-full border border-border bg-background flex items-center justify-center disabled:opacity-30 hover:bg-muted transition"
+                          aria-label="Scroll right"
+                        >
+                          <ChevronRight className="h-4 w-4" />
+                        </button>
                       </div>
                     </div>
-                  );
-                })}
+
+                    <div
+                      ref={(el) => {
+                        carouselRefs.current[cat.key] = el;
+                      }}
+                      onScroll={() => checkScrollPosition(cat.key)}
+                      className="flex gap-3 overflow-x-auto scrollbar-hide scroll-smooth"
+                    >
+                      {items.map((item, idx) => {
+                        const key = `${item.product_name}-${item.retailer}-${item.zip_code}-${item.product_price}-${idx}`;
+                        const isAdded = addedItems.has(key);
+
+                        return (
+                          <div
+                            key={key}
+                            className="flex-shrink-0 w-[160px] rounded-xl border border-border/60 bg-background/50 p-3 relative transition-shadow hover:shadow-md"
+                          >
+                            <img
+                              src={normalizeImageUrl(item.image_link)}
+                              alt={item.product_name}
+                              className="h-28 w-full rounded-md border bg-gray-50 object-cover"
+                              onError={(e) => {
+                                e.currentTarget.src = PLACEHOLDER_IMG;
+                              }}
+                            />
+
+                            <div className="mt-2 pb-8">
+                              <p className="text-sm font-semibold text-foreground line-clamp-2">
+                                {item.product_name}
+                              </p>
+
+                              {item.product_size && (
+                                <p className="text-xs text-muted-foreground truncate">
+                                  {item.product_size}
+                                </p>
+                              )}
+
+                              <p className="mt-1 text-lg font-bold text-green-600">
+                                ${Number(item.product_price).toFixed(2)}
+                              </p>
+
+                              <div className="flex items-center gap-1 mt-1">
+                                {item.retailer_logo_url && (
+                                  <img
+                                    src={item.retailer_logo_url}
+                                    alt="logo"
+                                    className="h-4 w-auto object-contain"
+                                  />
+                                )}
+                                <p className="text-xs text-muted-foreground truncate">
+                                  {item.retailer}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="absolute bottom-3 right-3">
+                              <Button
+                                size="icon"
+                                className={`h-8 w-8 rounded-full shadow-md transition-all ${
+                                  isAdded
+                                    ? "bg-prox text-white hover:bg-prox-hover"
+                                    : "bg-white text-green-600 border border-green-200 hover:bg-green-50"
+                                }`}
+                                onClick={() => handleAddDealToCart(item)}
+                              >
+                                {isAdded ? (
+                                  <Check className="h-4 w-4" />
+                                ) : (
+                                  <Plus className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
 
@@ -1829,7 +1854,7 @@ export function Deals() {
                   </p>
                 </div>
 
-                {!loading && singleItemDeals.length > 0 && (
+                {singleItemDeals.length > 0 && (
                   <Select
                     value={sortOption}
                     onValueChange={(value) => {
@@ -1851,7 +1876,7 @@ export function Deals() {
 
               {loading && (
                 <p className="text-sm text-muted-foreground py-8 text-center">
-                  Loading deals…
+                  Updating deals…
                 </p>
               )}
 
@@ -1863,7 +1888,7 @@ export function Deals() {
                 </p>
               )}
 
-              {!loading && singleItemDeals.length > 0 && (
+              {singleItemDeals.length > 0 && (
                 <>
                   {renderItemsGrid(paginatedSingleItemDeals)}
 

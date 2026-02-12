@@ -4,12 +4,15 @@ import { persist } from 'zustand/middleware';
 export interface GuestItem {
   id: string;
   name: string;
+  brand?: string | null;
   category: string;
   purchased_at: string;
-  estimated_expiration_at?: string;
-  estimated_restock_at?: string;
+  estimated_expiration_at?: string | null;
+  estimated_restock_at?: string | null;
   estimate_source?: 'heuristic' | 'llm';
-  store_name?: string;
+  store_name?: string | null;
+  quantity?: number | null;
+  unit?: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -17,11 +17,11 @@ type AddItemMode = 'select' | 'manual' | 'photo' | 'receipt';
 type PantryTrackerInsert = {
   name: string;
   brand?: string | null;
-  category?: string;
-  purchased_at?: string;
+  category: string;
+  purchased_at: string;
   estimated_expiration_at?: string | null;
   estimated_restock_at?: string | null;
-  estimate_source?: string | null;
+  estimate_source?: 'heuristic' | 'llm' | null;
   store_name?: string | null;
   quantity?: number | null;
   unit?: string | null;
@@ -31,22 +31,48 @@ type PantryTrackerInsert = {
   updated_at?: string;
 };
 
-function normalizeToPantryInsert(raw: any): PantryTrackerInsert {
+type RawPantryItem = Partial<{
+  name: string;
+  brand: string | null;
+  category: string;
+  purchased_at: string;
+  estimated_expiration_at: string | null;
+  estimated_restock_at: string | null;
+  estimate_source: 'heuristic' | 'llm' | string | null;
+  store_name: string | null;
+  quantity: number | null;
+  unit: string | null;
+  created_at: string;
+  updated_at: string;
+}>;
+
+function asRawPantryItem(raw: unknown): RawPantryItem {
+  if (typeof raw === "object" && raw !== null) {
+    return raw as RawPantryItem;
+  }
+  return {};
+}
+
+function normalizeToPantryInsert(raw: unknown): PantryTrackerInsert {
   const nowIso = new Date().toISOString();
+  const item = asRawPantryItem(raw);
 
   return {
-    name: typeof raw?.name === 'string' ? raw.name.trim() : '',
-    brand: raw?.brand ?? null,
-    category: typeof raw?.category === 'string' && raw.category.trim() ? raw.category.trim() : 'Uncategorized',
-    purchased_at: typeof raw?.purchased_at === 'string' && raw.purchased_at ? raw.purchased_at : nowIso,
-    estimated_expiration_at: raw?.estimated_expiration_at ?? null,
-    estimated_restock_at: raw?.estimated_restock_at ?? null,
-    estimate_source: raw?.estimate_source ?? null,
-    store_name: raw?.store_name ?? null,
-    quantity: raw?.quantity ?? null,
-    unit: raw?.unit ?? null,
-    created_at: raw?.created_at ?? nowIso,
-    updated_at: raw?.updated_at ?? nowIso,
+    name: typeof item.name === 'string' ? item.name.trim() : '',
+    brand: item.brand ?? null,
+    category: typeof item.category === 'string' && item.category.trim() ? item.category.trim() : 'Uncategorized',
+    purchased_at: typeof item.purchased_at === 'string' && item.purchased_at ? item.purchased_at : nowIso,
+    estimated_expiration_at: item.estimated_expiration_at ?? null,
+    estimated_restock_at: item.estimated_restock_at ?? null,
+    estimate_source:
+      item.estimate_source === 'heuristic' || item.estimate_source === 'llm'
+        ? item.estimate_source
+        : null,
+    store_name: item.store_name ?? null,
+    quantity: item.quantity ?? null,
+    unit: item.unit ?? null,
+    created_at: item.created_at ?? nowIso,
+    updated_at: item.updated_at ?? nowIso,
   };
 }
 
@@ -67,7 +93,7 @@ export function AddItem() {
     }
   };
 
-  const handleItemSuccess = async (items: any | any[]) => {
+  const handleItemSuccess = async (items: unknown | unknown[]) => {
     const itemsArray = Array.isArray(items) ? items : [items];
     const normalized = itemsArray.map(normalizeToPantryInsert);
 
@@ -95,7 +121,6 @@ export function AddItem() {
         }));
 
         const { error } = await supabase
-          // @ts-expect-error - pantry_tracker not yet in generated types
           .from('pantry_tracker')
           .insert(rowsToInsert);
 

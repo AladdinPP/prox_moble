@@ -17,21 +17,41 @@ export interface WaitlistCheckResult {
 }
 
 export interface ForgotPasswordResult {
-  error: any;
+  error: unknown;
   /** If the email belongs to a waitlist-only user (no auth account) */
   isWaitlistOnly?: boolean;
 }
+
+interface SignUpUserData {
+  first_name?: string;
+  last_name?: string;
+  phone_number?: string;
+  zip_code?: string;
+  birthday?: string;
+  gender_identity?: string;
+  household_size?: number;
+  grocer_1?: string;
+  grocer_2?: string;
+  grocer_3?: string;
+}
+
+type CheckWaitlistEmailRpcClient = {
+  rpc: (
+    fn: "check_waitlist_email",
+    args: { lookup_email: string }
+  ) => Promise<{ data: WaitlistCheckResult | null; error: unknown }>;
+};
 
 interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
-  signUp: (email: string, password: string, userData: any) => Promise<{ error: any }>;
-  signIn: (email: string, password: string) => Promise<{ error: any }>;
+  signUp: (email: string, password: string, userData: SignUpUserData) => Promise<{ error: unknown }>;
+  signIn: (email: string, password: string) => Promise<{ error: unknown }>;
   signOut: () => Promise<void>;
   checkWaitlistEmail: (email: string) => Promise<WaitlistCheckResult>;
   forgotPassword: (email: string) => Promise<ForgotPasswordResult>;
-  resetPassword: (newPassword: string) => Promise<{ error: any }>;
+  resetPassword: (newPassword: string) => Promise<{ error: unknown }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -88,16 +108,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    */
   const checkWaitlistEmail = async (email: string): Promise<WaitlistCheckResult> => {
     try {
-      const { data, error } = await supabase.rpc('check_waitlist_email', {
+      const rpcClient = supabase as unknown as CheckWaitlistEmailRpcClient;
+      const { data, error } = await rpcClient.rpc('check_waitlist_email', {
         lookup_email: email,
       });
 
-      if (error) {
+      if (error || !data) {
         console.error('Error checking waitlist email:', error);
         return { status: 'new_user', message: 'Ready to create account.' };
       }
 
-      return data as WaitlistCheckResult;
+      return data;
     } catch (e) {
       console.error('Unexpected error checking waitlist:', e);
       return { status: 'new_user', message: 'Ready to create account.' };
@@ -130,7 +151,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           : undefined;
 
       try {
-        const { data, error } = await supabase.functions.invoke("send-password-reset", {
+        const { error } = await supabase.functions.invoke("send-password-reset", {
           body: { email, redirectTo },
         });
 
@@ -151,7 +172,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       return { error: null };
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("Unexpected forgot password error:", e);
       return { error: e };
     }
@@ -161,19 +182,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    * Set a new password (called from the ResetPassword page after
    * the user clicks the link in their email).
    */
-  const resetPassword = async (newPassword: string): Promise<{ error: any }> => {
+  const resetPassword = async (newPassword: string): Promise<{ error: unknown }> => {
     try {
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       return { error };
-    } catch (e: any) {
+    } catch (e: unknown) {
       return { error: e };
     }
   };
 
-  const signUp = async (email: string, password: string, userData: any) => {
+  const signUp = async (email: string, password: string, userData: SignUpUserData) => {
+    const normalizedEmail = email.trim().toLowerCase();
     const redirectUrl =
       typeof window !== "undefined"
-        ? `${window.location.origin}/confirm-email`
+        ? `${window.location.origin}/auth?mode=signin`
         : undefined;
 
     // Build preferred_retailers array from grocer_1/2/3
@@ -188,7 +210,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }`.trim();
 
     const finalMeta = {
-      email,
+      email: normalizedEmail,
       first_name: userData.first_name,
       last_name: userData.last_name,
       phone_number: userData.phone_number,
@@ -202,7 +224,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const { data, error } = await supabase.auth.signUp({
-        email,
+        email: normalizedEmail,
         password,
         options: {
           ...(redirectUrl ? { emailRedirectTo: redirectUrl } : {}),
@@ -232,8 +254,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .from("waitlist")
           .upsert(
             {
-              email,
-              name: displayName || email,
+              email: normalizedEmail,
+              name: displayName || normalizedEmail,
               user_id: userId,
               zip_code: userData.zip_code ?? null,
               preferred_retailers:
@@ -262,21 +284,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Hydrate profile
       try {
         if (userId) {
-          const { error: profileError } = await (supabase as any)
-            .from("profiles")
-            .update({
+          const profileUpsert = {
+              id: userId,
+              user_id: userId,
               first_name: finalMeta.first_name,
               last_name: finalMeta.last_name,
               display_name: finalMeta.display_name,
+              birthday: finalMeta.date_of_birth,
               date_of_birth: finalMeta.date_of_birth,
               gender_identity: finalMeta.gender_identity,
               zip_code: finalMeta.zip_code,
+              grocer_1: userData.grocer_1 ?? null,
+              grocer_2: userData.grocer_2 ?? null,
+              household_size: userData.household_size ?? null,
               preferred_retailers: finalMeta.preferred_retailers,
               app_preference: finalMeta.app_preference,
               phone_number: finalMeta.phone_number,
-              email,
-            })
-            .eq("user_id", userId);
+              email: normalizedEmail,
+              updated_at: new Date().toISOString(),
+            };
+
+          const { error: profileError } = await supabase
+            .from("profiles")
+            .upsert(profileUpsert, { onConflict: "id" });
 
           if (profileError) {
             console.error("Error updating profile:", profileError);
@@ -290,8 +320,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         await supabase.functions.invoke("send-welcome-email", {
           body: {
-            name: displayName || userData.first_name || email,
-            email,
+            name: displayName || userData.first_name || normalizedEmail,
+            email: normalizedEmail,
           },
         });
 
@@ -299,7 +329,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           body: {
             firstName: userData.first_name,
             lastName: userData.last_name,
-            email,
+            email: normalizedEmail,
             dateOfBirth: finalMeta.date_of_birth,
             genderIdentity: finalMeta.gender_identity,
             zipCode: finalMeta.zip_code,
@@ -312,7 +342,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       return { error: null };
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("Unexpected signup error:", e);
       return { error: e };
     }

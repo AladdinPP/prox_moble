@@ -47,7 +47,7 @@ export function AddCategory({setCategoriesChangeTracker,categoriesChangeTracker}
 
     setLoading(true);
     try {
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from('other_categories')
         .insert({
           name: categoryName.trim(),

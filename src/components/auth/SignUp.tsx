@@ -2,11 +2,12 @@ import React, { useMemo, useState } from "react";
 import { useForm, Controller, FieldErrors } from "react-hook-form";
 import { z } from "zod";
 import type { Resolver } from "react-hook-form";
-import { Eye, EyeOff, Calendar as CalendarIcon } from "lucide-react";
+import { Eye, EyeOff, Calendar as CalendarIcon, ArrowLeft, Info, Check } from "lucide-react";
 
 import { useAuth } from "@/contexts/AuthContext";
 import type { WaitlistCheckResult } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { getErrorMessage } from "@/lib/error";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +25,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 // -----------------------------
 // Constants
@@ -58,15 +60,15 @@ const GROCERY_STORES = [
 const GENDER_OPTIONS = ["male", "female", "non-binary", "prefer-not-to-say"] as const;
 
 const stepTitle = {
-  1: "Welcome to smarter grocery shopping",
+  1: "Welcome to smarter grocery shopping.",
   2: "Help us personalize your savings",
-  3: "Help us personalize your savings",
+  3: "Where do you usually shop?",
 } as const;
 
 const stepSubtitle = {
   1: "Create your account",
-  2: "This helps us better predict grocery need and surface relevant deals",
-  3: "This helps us better predict grocery need and surface relevant deals",
+  2: "This helps us better predict grocery needs and surface relevant deals.",
+  3: "Choose one or more retailers to start finding the cheapest basket.",
 } as const;
 
 
@@ -133,11 +135,11 @@ const parseMMDDYYYY = (value?: string) => {
 
 // Convert Zod issues -> RHF errors
 function zodToRHFErrors<T>(issues: z.ZodIssue[]): FieldErrors<T> {
-  const fieldErrors: any = {};
+  const fieldErrors: Record<string, { type: string; message: string }> = {};
   for (const issue of issues) {
     const path = issue.path?.[0];
     if (!path) continue;
-    fieldErrors[path] = { type: issue.code, message: issue.message };
+    fieldErrors[String(path)] = { type: issue.code, message: issue.message };
   }
   return fieldErrors as FieldErrors<T>;
 }
@@ -158,53 +160,77 @@ function ProgressDots({ step }: { step: 1 | 2 | 3 }) {
   );
 }
 
-// Auto-format raw input into (XXX) XXX-XXXX as the user types
-const formatPhoneInput = (value: string): string => {
-  const digits = value.replace(/\D/g, "").slice(0, 10); // max 10 digits
-  const len = digits.length;
+function InlineFieldError({ message }: { message?: string }) {
+  if (!message) return null;
 
-  if (len === 0) return "";
-  if (len < 4) return `(${digits}${" ".repeat(3 - len)})`; // "(7  )", "(75 )", "(757)"
-  if (len < 7) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`; // "(757) 3", "(757) 35", "(757) 353"
-  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`; // "(757) 353-7..."
+  return (
+    <p className="flex items-start gap-1.5 pt-0.5 text-[13px] leading-[1.2] text-[#E5484D] font-secondary">
+      <span
+        aria-hidden="true"
+        className="mt-[1px] inline-flex h-4 w-4 flex-none items-center justify-center rounded-full bg-[#E5484D] text-[11px] font-semibold leading-none text-white"
+      >
+        !
+      </span>
+      <span>{message}</span>
+    </p>
+  );
+}
+
+const STORE_PLACEHOLDER_THEMES = [
+  { tile: "bg-[#3B2A21]", text: "text-[#F3E5C5]" },
+  { tile: "bg-[#2E5B3A]", text: "text-[#EAF4EA]" },
+  { tile: "bg-[#1F4E4B]", text: "text-[#E7F7F6]" },
+  { tile: "bg-[#2B6673]", text: "text-[#E5F4F8]" },
+  { tile: "bg-[#AA2E25]", text: "text-[#FDE9E8]" },
+  { tile: "bg-[#24597A]", text: "text-[#E6F2FA]" },
+  { tile: "bg-[#4A6B2F]", text: "text-[#EEF8E9]" },
+  { tile: "bg-[#4B4B4B]", text: "text-[#F3F4F6]" },
+] as const;
+
+const getStoreLogoText = (store: string): string => {
+  const words = store
+    .replace(/&/g, " ")
+    .replace(/[^a-zA-Z ]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (words.length === 0) return "SHOP";
+  if (words.length === 1) return words[0].slice(0, 8).toUpperCase();
+  return words
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase();
 };
 
-// Count how many digits exist in a string before a given index
-const countDigitsBeforeIndex = (str: string, index: number) => {
-  let count = 0;
-  for (let i = 0; i < Math.min(index, str.length); i++) {
-    if (/\d/.test(str[i])) count++;
+const normalizeEmail = (value: string): string => value.trim().toLowerCase();
+
+const sanitizeZipCode = (value: string): string => value.replace(/\D/g, "").slice(0, 5);
+
+const toIsoDateFromMMDDYYYY = (value: string): string | null => {
+  const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return null;
+
+  const [, mm, dd, yyyy] = match;
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const parseDateOfBirthForForm = (value?: string): string | null => {
+  if (!value) return null;
+  const trimmed = value.trim();
+
+  const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    const [, yyyy, mm, dd] = isoMatch;
+    return `${mm}/${dd}/${yyyy}`;
   }
-  return count;
-};
 
-// Find the cursor position in the formatted string that corresponds to "digitIndex" digits
-const findCursorPosFromDigitIndex = (formatted: string, digitIndex: number) => {
-  if (digitIndex <= 0) return 0;
-  let digitsSeen = 0;
-
-  for (let i = 0; i < formatted.length; i++) {
-    if (/\d/.test(formatted[i])) {
-      digitsSeen++;
-      if (digitsSeen === digitIndex) {
-        return i + 1; // place caret after that digit
-      }
-    }
+  const usMatch = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (usMatch) {
+    return trimmed;
   }
 
-  // If we ran out of digits, put caret at end
-  return formatted.length;
-};
-
-// Auto-format raw digits into (XXX) XXX-XXXX
-const formatPhoneDigits = (digits: string): string => {
-  const d = digits.replace(/\D/g, "").slice(0, 10);
-  const len = d.length;
-
-  if (len === 0) return "";
-  if (len < 4) return `(${d}${" ".repeat(3 - len)})`; // optional "blanks" behavior
-  if (len < 7) return `(${d.slice(0, 3)}) ${d.slice(3)}`;
-  return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+  return null;
 };
 
 
@@ -219,13 +245,19 @@ const baseSchema = z.object({
   confirmPassword: z.string(),
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
-  phoneNumber: z.string().min(10, "Phone number must be at least 10 characters"),
+  phoneNumber: z.string().optional(),
 
-  zipCode: z.string().regex(/^\d{5}$/, "Zip code must be 5 digits"),
+  zipCode: z
+    .string()
+    .trim()
+    .min(1, "Please enter your ZIP code")
+    .regex(/^\d{5}$/, "Please enter your ZIP code"),
 
   birthday: z
     .string()
-    .regex(/^\d{2}\/\d{2}\/\d{4}$/, "Birthday must be in MM/DD/YYYY format")
+    .trim()
+    .min(1, "Please enter your birthday")
+    .regex(/^\d{2}\/\d{2}\/\d{4}$/, "Please enter your birthday")
     .refine((value) => {
       const [monthStr, dayStr, yearStr] = value.split("/");
       const month = Number(monthStr);
@@ -256,25 +288,47 @@ const baseSchema = z.object({
 
       const today = new Date();
       return date < today;
-    }, "Birthday must be a valid date in the past"),
+    }, "Please enter a valid birthday"),
 
-  householdSize: z.number().min(1).max(12),
+  householdSize: z.preprocess(
+    (value) => {
+      if (typeof value === "number") {
+        return Number.isNaN(value) ? undefined : value;
+      }
+
+      if (typeof value === "string") {
+        const trimmed = value.trim();
+        if (!trimmed) return undefined;
+        const parsed = Number(trimmed);
+        return Number.isNaN(parsed) ? undefined : parsed;
+      }
+
+      return value;
+    },
+    z
+      .number({
+        required_error: "Please enter your household size",
+        invalid_type_error: "Please enter your household size",
+      })
+      .int("Please enter a valid household size")
+      .min(1, "Please enter a valid household size")
+      .max(12, "Please enter a valid household size")
+  ),
 
   genderIdentity: z.enum(GENDER_OPTIONS, {
-    required_error: "Gender identity is required",
+    message: "Please select an option",
   }),
 
   selectedGrocers: z
     .array(z.string())
-    .min(2, "Please select at least 2 stores")
-    .max(3, "You can select up to 3 stores"),
+    .min(2, "Please select at least 2 retailers")
+    .max(3, "Please select no more than 3 retailers"),
 });
 
 const step1Schema = baseSchema
   .pick({
     firstName: true,
     lastName: true,
-    phoneNumber: true,
     email: true,
     password: true,
     confirmPassword: true,
@@ -301,9 +355,10 @@ type SignUpForm = z.infer<typeof fullSchema>;
 interface SignUpProps {
   onSuccess: () => void;
   onSwitchToSignIn: (email?: string) => void;
+  onBackToWelcome?: () => void;
 }
 
-export function SignUp({ onSuccess, onSwitchToSignIn }: SignUpProps) {
+export function SignUp({ onSuccess, onSwitchToSignIn, onBackToWelcome }: SignUpProps) {
   const { signUp, checkWaitlistEmail } = useAuth();
   const { toast } = useToast();
 
@@ -312,6 +367,7 @@ export function SignUp({ onSuccess, onSwitchToSignIn }: SignUpProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isCheckingEmail, setIsCheckingEmail] = useState(false);
 
   // Track legacy waitlist user status
   const [isLegacyUser, setIsLegacyUser] = useState(false);
@@ -336,7 +392,7 @@ export function SignUp({ onSuccess, onSwitchToSignIn }: SignUpProps) {
       }
 
       return {
-        values: {},
+        values: {} as SignUpForm,
         errors: zodToRHFErrors<SignUpForm>(parsed.error.issues),
       };
     };
@@ -346,9 +402,12 @@ export function SignUp({ onSuccess, onSwitchToSignIn }: SignUpProps) {
     register,
     handleSubmit,
     control,
+    watch,
     formState: { errors },
     reset,
     trigger,
+    getValues,
+    setValue,
   } = useForm<SignUpForm>({
     resolver,
     defaultValues: {
@@ -359,22 +418,31 @@ export function SignUp({ onSuccess, onSwitchToSignIn }: SignUpProps) {
       password: "",
       confirmPassword: "",
       zipCode: "",
-      householdSize: 1,
+      householdSize: undefined as unknown as number,
       // NOTE: stored value will be set from birthdayDigits via Controller
       birthday: "MM/DD/YYYY",
-      genderIdentity: undefined as any, // user must select
+      genderIdentity: undefined as SignUpForm["genderIdentity"] | undefined, // user must select
       selectedGrocers: [],
     },
   });
 
+  const selectedGrocerCount = watch("selectedGrocers")?.length ?? 0;
+  const retailerProgressPercent =
+    selectedGrocerCount >= 3 ? 100 : selectedGrocerCount === 2 ? 66 : selectedGrocerCount === 1 ? 33 : 0;
+
   const handleNext = async () => {
+    if (isCheckingEmail) return;
+
     const ok = await trigger();
     if (!ok) return;
 
     // When leaving step 1, check if this email is a legacy waitlist user
     if (step === 1) {
-      const emailValue = (document.getElementById('email') as HTMLInputElement)?.value;
+      const emailValue = normalizeEmail(getValues("email") || "");
       if (emailValue) {
+        setValue("email", emailValue, { shouldDirty: true, shouldValidate: true });
+        setIsCheckingEmail(true);
+
         try {
           const result = await checkWaitlistEmail(emailValue);
 
@@ -390,6 +458,35 @@ export function SignUp({ onSuccess, onSwitchToSignIn }: SignUpProps) {
           if (result.status === 'legacy_waitlist') {
             setIsLegacyUser(true);
             setLegacyData(result.existing_data ?? null);
+
+            const existingData = result.existing_data;
+            if (existingData?.first_name) {
+              setValue("firstName", existingData.first_name, { shouldDirty: true });
+            }
+            if (existingData?.last_name) {
+              setValue("lastName", existingData.last_name, { shouldDirty: true });
+            }
+            if (existingData?.phone_number) {
+              setValue("phoneNumber", existingData.phone_number.replace(/\D/g, "").slice(0, 10), {
+                shouldDirty: true,
+              });
+            }
+            if (existingData?.zip_code) {
+              setValue("zipCode", sanitizeZipCode(existingData.zip_code), { shouldDirty: true });
+            }
+            if (existingData?.preferred_retailers?.length) {
+              setValue("selectedGrocers", existingData.preferred_retailers.slice(0, 3), {
+                shouldDirty: true,
+              });
+            }
+
+            const parsedBirthday = parseDateOfBirthForForm(existingData?.date_of_birth);
+            if (parsedBirthday) {
+              const digits = parsedBirthday.replace(/\D/g, "").slice(0, 8);
+              setBirthdayDigits(digits);
+              setValue("birthday", parsedBirthday, { shouldDirty: true });
+            }
+
             toast({
               title: "Welcome back! 👋",
               description: "We found your waitlist info. Just set a password and confirm your details to activate your account.",
@@ -397,6 +494,8 @@ export function SignUp({ onSuccess, onSwitchToSignIn }: SignUpProps) {
           }
         } catch (e) {
           console.error("Waitlist check error:", e);
+        } finally {
+          setIsCheckingEmail(false);
         }
       }
     }
@@ -412,22 +511,23 @@ export function SignUp({ onSuccess, onSwitchToSignIn }: SignUpProps) {
     setIsLoading(true);
 
     try {
-      const [monthStr, dayStr, yearStr] = data.birthday.split("/");
-      const month = Number(monthStr);
-      const day = Number(dayStr);
-      const year = Number(yearStr);
-      const birthdayDate = new Date(year, month - 1, day);
-      const birthdayISO = birthdayDate.toISOString().split("T")[0];
+      const normalizedEmail = normalizeEmail(data.email);
+      const birthdayISO = toIsoDateFromMMDDYYYY(data.birthday);
+      if (!birthdayISO) {
+        throw new Error("Birthday format is invalid.");
+      }
 
       const grocer1 = data.selectedGrocers[0] ?? null;
       const grocer2 = data.selectedGrocers[1] ?? null;
       const grocer3 = data.selectedGrocers[2] ?? null;
 
-      const { error } = await signUp(data.email, data.password, {
+      const sanitizedPhone = (data.phoneNumber ?? "").replace(/\D/g, "").slice(0, 10);
+
+      const { error } = await signUp(normalizedEmail, data.password, {
         first_name: data.firstName,
         last_name: data.lastName,
-        phone_number: data.phoneNumber,
-        zip_code: data.zipCode,
+        phone_number: sanitizedPhone.length === 10 ? sanitizedPhone : undefined,
+        zip_code: sanitizeZipCode(data.zipCode),
         birthday: birthdayISO,
         household_size: data.householdSize,
         gender_identity: data.genderIdentity,
@@ -439,13 +539,13 @@ export function SignUp({ onSuccess, onSwitchToSignIn }: SignUpProps) {
       if (error) {
         toast({
           title: "Sign up failed",
-          description: error.message,
+          description: getErrorMessage(error, "Failed to create your account."),
           variant: "destructive",
         });
       } else {
-        // Show the confirmation screen instead of navigating away
-        setSignUpEmail(data.email);
-        setSignUpComplete(true);
+      // Show the confirmation screen instead of navigating away
+      setSignUpEmail(normalizedEmail);
+      setSignUpComplete(true);
       }
     } catch (e) {
       toast({
@@ -510,199 +610,244 @@ export function SignUp({ onSuccess, onSwitchToSignIn }: SignUpProps) {
   }
 
   return (
-    <ProxCard className="w-full max-w-md mx-auto">
-      <ProxCardHeader>
+    <ProxCard
+      className={`w-full max-w-md mx-auto ${
+        step === 1
+          ? "bg-transparent border-0 shadow-none rounded-none p-0"
+          : step >= 2
+          ? "bg-[#F3F5F4] border-[#D0D5DD] rounded-[28px] shadow-[0_8px_24px_rgba(16,24,40,0.08)]"
+          : ""
+      }`}
+    >
+      <ProxCardHeader
+        className={
+          step === 1
+            ? "px-4 sm:px-6 pt-4 pb-3"
+            : step >= 2
+            ? "px-6 pt-6 pb-2"
+            : undefined
+        }
+      >
+        {onBackToWelcome && step === 1 ? (
+          <div className="mb-1">
+            <button
+              type="button"
+              onClick={onBackToWelcome}
+              className="inline-flex items-center justify-center h-9 w-9 rounded-full text-[#3A4A56] hover:text-[#122029] hover:bg-black/5 transition-colors"
+              aria-label="Back to welcome"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+          </div>
+        ) : null}
+        {step >= 2 ? (
+          <div className="mb-1">
+            <button
+              type="button"
+              onClick={handleBack}
+              className="inline-flex items-center justify-center h-9 w-9 rounded-full text-[#3A4A56] hover:text-[#122029] hover:bg-black/5 transition-colors"
+              aria-label="Back"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+          </div>
+        ) : null}
         <ProgressDots step={step} />
-        <ProxCardTitle className="text-center text-2xl font-primary font-semibold text-black">
+        <ProxCardTitle
+          className={
+            step === 1
+              ? "text-center text-[34px] leading-[1.15] tracking-[-0.01em] font-primary font-semibold text-[#122029] mt-2"
+              : step === 2
+              ? "text-center text-[30px] leading-[1.15] tracking-[-0.01em] font-primary font-semibold text-[#171B24] mt-2"
+              : "text-center text-[30px] leading-[1.2] tracking-[-0.01em] font-primary font-semibold text-[#171B24] mt-2"
+          }
+        >
           {stepTitle[step]}
         </ProxCardTitle>
-        <p className="text-center text-sm text-muted-foreground font-secondary">
-          {stepSubtitle[step]}
-        </p>
+        {step !== 1 ? (
+          <p
+            className="text-center font-secondary text-[15px] leading-[1.5] text-[#667085]"
+          >
+            {stepSubtitle[step]}
+          </p>
+        ) : null}
       </ProxCardHeader>
 
-      <ProxCardContent>
+      <ProxCardContent
+        className={
+          step === 1
+            ? "px-4 sm:px-6 pb-5 pt-0"
+            : step >= 2
+            ? "px-6 pb-8 pt-2"
+            : undefined
+        }
+      >
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           {/* ---------------- STEP 1 ---------------- */}
           {step === 1 && (
             <>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="firstName" className="font-secondary text-black">
-                    First Name<span className="text-red-500"> *</span>
+                  <Label htmlFor="firstName" className="font-secondary text-[15px] font-medium text-[#25313D]">
+                    First Name
                   </Label>
-                  <Input id="firstName" {...register("firstName")} className="h-12" />
-                  {errors.firstName && (
-                    <p className="text-sm text-destructive">{errors.firstName.message}</p>
-                  )}
+                  <Input
+                    id="firstName"
+                    {...register("firstName")}
+                    className={[
+                      "h-12 rounded-full bg-transparent placeholder:text-[#98A2B3]",
+                      errors.firstName
+                        ? "border-[#E5484D] focus-visible:border-[#E5484D] focus-visible:ring-[#E5484D]/20"
+                        : "border-[#D0D5DD] focus-visible:ring-[#0B3D2E]/25 focus-visible:border-[#0B3D2E]",
+                    ].join(" ")}
+                    placeholder="Enter your first name"
+                  />
+                  <InlineFieldError message={errors.firstName?.message} />
                 </div>
+
                 <div className="space-y-2">
-                  <Label htmlFor="lastName" className="font-secondary text-black">
-                    Last Name<span className="text-red-500"> *</span>
+                  <Label htmlFor="lastName" className="font-secondary text-[15px] font-medium text-[#25313D]">
+                    Last Name
                   </Label>
-                  <Input id="lastName" {...register("lastName")} className="h-12" />
-                  {errors.lastName && (
-                    <p className="text-sm text-destructive">{errors.lastName.message}</p>
-                  )}
+                  <Input
+                    id="lastName"
+                    {...register("lastName")}
+                    className={[
+                      "h-12 rounded-full bg-transparent placeholder:text-[#98A2B3]",
+                      errors.lastName
+                        ? "border-[#E5484D] focus-visible:border-[#E5484D] focus-visible:ring-[#E5484D]/20"
+                        : "border-[#D0D5DD] focus-visible:ring-[#0B3D2E]/25 focus-visible:border-[#0B3D2E]",
+                    ].join(" ")}
+                    placeholder="Enter your last name"
+                  />
+                  <InlineFieldError message={errors.lastName?.message} />
                 </div>
-              </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="phoneNumber" className="font-secondary text-black">
-                  Phone Number<span className="text-red-500"> *</span>
-                </Label>
+                <div className="space-y-2">
+                  <Label htmlFor="email" className="font-secondary text-[15px] font-medium text-[#25313D]">
+                    Email
+                  </Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    {...register("email")}
+                    className={[
+                      "h-12 rounded-full bg-transparent placeholder:text-[#98A2B3]",
+                      errors.email
+                        ? "border-[#E5484D] focus-visible:border-[#E5484D] focus-visible:ring-[#E5484D]/20"
+                        : "border-[#D0D5DD] focus-visible:ring-[#0B3D2E]/25 focus-visible:border-[#0B3D2E]",
+                    ].join(" ")}
+                    placeholder="Enter your email address"
+                  />
+                  <InlineFieldError message={errors.email?.message} />
+                </div>
 
-                <Controller
-                  name="phoneNumber"
-                  control={control}
-                  render={({ field }) => (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="password" className="font-secondary text-[15px] font-medium text-[#25313D]">
+                      Password
+                    </Label>
+                    <TooltipProvider delayDuration={120}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            className="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground hover:text-[#25313D]"
+                            aria-label="View password requirements"
+                          >
+                            <Info className="h-3.5 w-3.5" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-[240px] text-xs leading-5">
+                          Use at least 8 characters.
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <div className="relative">
                     <Input
-                      id="phoneNumber"
-                      className="h-12"
-                      placeholder="(555) 123-4567"
-                      inputMode="numeric"
-                      autoComplete="tel"
-                      value={formatPhoneDigits(field.value || "")}
-                      onChange={(e) => {
-                        const inputEl = e.currentTarget;
-
-                        // 1) Where is the cursor right now (in the formatted string)?
-                        const caretPos = inputEl.selectionStart ?? inputEl.value.length;
-
-                        // 2) How many digits were to the left of the cursor?
-                        const digitsBefore = countDigitsBeforeIndex(inputEl.value, caretPos);
-
-                        // 3) New digits-only value from what user typed
-                        const nextDigits = e.target.value.replace(/\D/g, "").slice(0, 10);
-
-                        // 4) Update RHF (store digits only)
-                        field.onChange(nextDigits);
-
-                        // 5) After React re-renders with the formatted value, restore caret
-                        requestAnimationFrame(() => {
-                          const formatted = formatPhoneDigits(nextDigits);
-                          const nextCaretPos = findCursorPosFromDigitIndex(formatted, digitsBefore);
-
-                          try {
-                            inputEl.setSelectionRange(nextCaretPos, nextCaretPos);
-                          } catch {
-                            // ignore
-                          }
-                        });
-                      }}
-                      onKeyDown={(e) => {
-                        // Optional: make backspace feel more natural when cursor is on formatting chars
-                        if (e.key !== "Backspace") return;
-
-                        const inputEl = e.currentTarget;
-                        const caretPos = inputEl.selectionStart ?? 0;
-
-                        // If the cursor is just after a non-digit (space, ), -, etc), move left one more
-                        // so backspace deletes the previous digit instead of "doing nothing".
-                        if (caretPos > 0 && !/\d/.test(inputEl.value[caretPos - 1])) {
-                          e.preventDefault();
-
-                          // Move left until we find a digit position to delete
-                          let newPos = caretPos - 1;
-                          while (newPos > 0 && !/\d/.test(inputEl.value[newPos - 1])) {
-                            newPos--;
-                          }
-
-                          // Simulate deleting one digit by removing the digit before cursor from digits-only
-                          const digits = (field.value || "").replace(/\D/g, "");
-                          const digitsBefore = countDigitsBeforeIndex(inputEl.value, newPos);
-
-                          // remove the digit at digitsBefore-1
-                          const removeIndex = Math.max(digitsBefore - 1, 0);
-                          const nextDigits =
-                            digits.slice(0, removeIndex) + digits.slice(removeIndex + 1);
-
-                          field.onChange(nextDigits);
-
-                          requestAnimationFrame(() => {
-                            const formatted = formatPhoneDigits(nextDigits);
-                            const nextCaretPos = findCursorPosFromDigitIndex(formatted, removeIndex);
-                            try {
-                              inputEl.setSelectionRange(nextCaretPos, nextCaretPos);
-                            } catch {}
-                          });
-                        }
-                      }}
+                      id="password"
+                      type={showPassword ? "text" : "password"}
+                      {...register("password")}
+                      className={[
+                        "h-12 rounded-full bg-transparent placeholder:text-[#98A2B3] pr-10",
+                        errors.password
+                          ? "border-[#E5484D] focus-visible:border-[#E5484D] focus-visible:ring-[#E5484D]/20"
+                          : "border-[#D0D5DD] focus-visible:ring-[#0B3D2E]/25 focus-visible:border-[#0B3D2E]",
+                      ].join(" ")}
+                      placeholder="Enter your password"
                     />
-                  )}
-                />
-
-
-                {errors.phoneNumber && (
-                  <p className="text-sm text-destructive">{errors.phoneNumber.message}</p>
-                )}
-              </div>
-
-
-              <div className="space-y-2">
-                <Label htmlFor="email" className="font-secondary text-black">
-                  Email<span className="text-red-500"> *</span>
-                </Label>
-                <Input id="email" type="email" {...register("email")} className="h-12" />
-                {errors.email && (
-                  <p className="text-sm text-destructive">{errors.email.message}</p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="password" className="font-secondary text-black">
-                  Password<span className="text-red-500"> *</span>
-                </Label>
-                <div className="relative">
-                  <Input
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    {...register("password")}
-                    className="h-12 pr-10"
-                  />
-                  <button
-                    type="button"
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                    onClick={() => setShowPassword((v) => !v)}
-                  >
-                    {showPassword ? (
-                      <EyeOff className="h-4 w-4 text-muted-foreground" />
-                    ) : (
-                      <Eye className="h-4 w-4 text-muted-foreground" />
-                    )}
-                  </button>
+                    <button
+                      type="button"
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                      onClick={() => setShowPassword((v) => !v)}
+                    >
+                      {showPassword ? (
+                        <EyeOff className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <Eye className="h-4 w-4 text-muted-foreground" />
+                      )}
+                    </button>
+                  </div>
+                  <InlineFieldError message={errors.password?.message} />
                 </div>
-                {errors.password && (
-                  <p className="text-sm text-destructive">{errors.password.message}</p>
-                )}
-              </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="confirmPassword" className="font-secondary text-black">
-                  Confirm Password<span className="text-red-500"> *</span>
-                </Label>
-                <div className="relative">
-                  <Input
-                    id="confirmPassword"
-                    type={showConfirmPassword ? "text" : "password"}
-                    {...register("confirmPassword")}
-                    className="h-12 pr-10"
-                  />
-                  <button
-                    type="button"
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                    onClick={() => setShowConfirmPassword((v) => !v)}
-                  >
-                    {showConfirmPassword ? (
-                      <EyeOff className="h-4 w-4 text-muted-foreground" />
-                    ) : (
-                      <Eye className="h-4 w-4 text-muted-foreground" />
-                    )}
-                  </button>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="confirmPassword" className="font-secondary text-[15px] font-medium text-[#25313D]">
+                      Confirm Password
+                    </Label>
+                    <TooltipProvider delayDuration={120}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            className="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground hover:text-[#25313D]"
+                            aria-label="View password match requirement"
+                          >
+                            <Info className="h-3.5 w-3.5" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-[240px] text-xs leading-5">
+                          Must match your password exactly.
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <div className="relative">
+                    <Input
+                      id="confirmPassword"
+                      type={showConfirmPassword ? "text" : "password"}
+                      {...register("confirmPassword")}
+                      className={[
+                        "h-12 rounded-full bg-transparent placeholder:text-[#98A2B3] pr-10",
+                        errors.confirmPassword
+                          ? "border-[#E5484D] focus-visible:border-[#E5484D] focus-visible:ring-[#E5484D]/20"
+                          : "border-[#D0D5DD] focus-visible:ring-[#0B3D2E]/25 focus-visible:border-[#0B3D2E]",
+                      ].join(" ")}
+                      placeholder="Confirm your password"
+                    />
+                    <button
+                      type="button"
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                      onClick={() => setShowConfirmPassword((v) => !v)}
+                    >
+                      {showConfirmPassword ? (
+                        <EyeOff className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <Eye className="h-4 w-4 text-muted-foreground" />
+                      )}
+                    </button>
+                  </div>
+                  <InlineFieldError message={errors.confirmPassword?.message} />
                 </div>
-                {errors.confirmPassword && (
-                  <p className="text-sm text-destructive">{errors.confirmPassword.message}</p>
-                )}
+
+                <button
+                  type="button"
+                  className="text-left text-[15px] font-medium text-[#0F4B3A] pt-1 hover:underline"
+                >
+                  Have a referral code?
+                </button>
               </div>
             </>
           )}
@@ -710,45 +855,122 @@ export function SignUp({ onSuccess, onSwitchToSignIn }: SignUpProps) {
           {/* ---------------- STEP 2 ---------------- */}
           {step === 2 && (
             <>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
-                  <Label htmlFor="zipCode" className="font-secondary text-black">
-                    Zip Code<span className="text-red-500"> *</span>
-                  </Label>
-                  <Input id="zipCode" {...register("zipCode")} className="h-12" placeholder="12345" />
-                  {errors.zipCode && (
-                    <p className="text-sm text-destructive">{errors.zipCode.message}</p>
-                  )}
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="zipCode" className="font-secondary text-[15px] font-medium text-[#25313D]">
+                      ZIP Code
+                    </Label>
+                    <TooltipProvider delayDuration={120}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            className="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground hover:text-[#25313D]"
+                            aria-label="Open field help"
+                          >
+                            <Info className="h-3.5 w-3.5" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-[260px] text-xs leading-5">
+                          Helps us find savings closest to you.
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <Input
+                    id="zipCode"
+                    {...register("zipCode", {
+                      setValueAs: (value) => sanitizeZipCode(String(value ?? "")),
+                    })}
+                    inputMode="numeric"
+                    className={[
+                      "h-12 rounded-full bg-transparent placeholder:text-[#98A2B3]",
+                      errors.zipCode
+                        ? "border-[#E5484D] focus-visible:border-[#E5484D] focus-visible:ring-[#E5484D]/20"
+                        : "border-[#D0D5DD] focus-visible:ring-[#0B3D2E]/25 focus-visible:border-[#0B3D2E]",
+                    ].join(" ")}
+                    placeholder="Enter your ZIP code"
+                  />
+                  <InlineFieldError message={errors.zipCode?.message} />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="householdSize" className="font-secondary text-black">
-                    Household Size<span className="text-red-500"> *</span>
-                  </Label>
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="householdSize" className="font-secondary text-[15px] font-medium text-[#25313D]">
+                      Household Size
+                    </Label>
+                    <TooltipProvider delayDuration={120}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            className="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground hover:text-[#25313D]"
+                            aria-label="Open field help"
+                          >
+                            <Info className="h-3.5 w-3.5" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-[260px] text-xs leading-5">
+                          Helps us predict how often you'll need to restock groceries.
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
                   <Input
                     id="householdSize"
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
                     min="1"
                     max="12"
-                    {...register("householdSize", { valueAsNumber: true })}
-                    className="h-12"
+                    {...register("householdSize", {
+                      setValueAs: (value) => {
+                        const digits = String(value ?? "").replace(/\D/g, "").slice(0, 2);
+                        if (!digits) return undefined;
+                        return Number(digits);
+                      },
+                    })}
+                    className={[
+                      "h-12 rounded-full bg-transparent placeholder:text-[#98A2B3]",
+                      errors.householdSize
+                        ? "border-[#E5484D] focus-visible:border-[#E5484D] focus-visible:ring-[#E5484D]/20"
+                        : "border-[#D0D5DD] focus-visible:ring-[#0B3D2E]/25 focus-visible:border-[#0B3D2E]",
+                    ].join(" ")}
+                    placeholder="Enter your household size"
                   />
-                  {errors.householdSize && (
-                    <p className="text-sm text-destructive">{errors.householdSize.message}</p>
-                  )}
+                  <InlineFieldError message={errors.householdSize?.message} />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="birthday" className="font-secondary text-black">
-                  Birthday<span className="text-red-500"> *</span>
-                </Label>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="birthday" className="font-secondary text-[15px] font-medium text-[#25313D]">
+                    Birthday
+                  </Label>
+                  <TooltipProvider delayDuration={120}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground hover:text-[#25313D]"
+                          aria-label="Open field help"
+                        >
+                          <Info className="h-3.5 w-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-[260px] text-xs leading-5">
+                        Helps us estimate grocery purchasing cycles.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
 
                 <Controller
                   name="birthday"
                   control={control}
                   render={({ field }) => {
-                    const displayValue = formatBirthdayFromDigits(birthdayDigits);
+                    const displayValue =
+                      birthdayDigits.length === 0 ? "" : formatBirthdayFromDigits(birthdayDigits);
 
                     // selected date only when we have a full real date (8 digits)
                     const selectedDate =
@@ -758,8 +980,14 @@ export function SignUp({ onSuccess, onSwitchToSignIn }: SignUpProps) {
                       <div className="relative">
                         <Input
                           id="birthday"
-                          className="h-12 pr-10"
+                          className={[
+                            "h-12 rounded-full bg-transparent placeholder:text-[#98A2B3] pr-10",
+                            errors.birthday
+                              ? "border-[#E5484D] focus-visible:border-[#E5484D] focus-visible:ring-[#E5484D]/20"
+                              : "border-[#D0D5DD] focus-visible:ring-[#0B3D2E]/25 focus-visible:border-[#0B3D2E]",
+                          ].join(" ")}
                           value={displayValue}
+                          placeholder="mm/dd/yyyy"
                           // ✅ We do NOT use onChange to interpret the "display string".
                           // We capture digits via keydown/paste so formatting never shifts.
                           onChange={() => {}}
@@ -836,7 +1064,7 @@ export function SignUp({ onSuccess, onSwitchToSignIn }: SignUpProps) {
                           <PopoverTrigger asChild>
                             <button
                               type="button"
-                              className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent/10"
+                              className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 items-center justify-center rounded-md text-[#667085] hover:bg-accent/10"
                               aria-label="Pick a date"
                             >
                               <CalendarIcon className="h-4 w-4 text-muted-foreground" />
@@ -864,7 +1092,6 @@ export function SignUp({ onSuccess, onSwitchToSignIn }: SignUpProps) {
                               initialFocus
                               classNames={{
                                 caption_label: "hidden",
-                                dropdowns: "flex items-center gap-2",
                                 dropdown: "w-auto",
                                 caption: "flex items-center justify-center gap-2 relative pt-1",
                                 caption_dropdowns: "flex items-center gap-2",
@@ -877,21 +1104,37 @@ export function SignUp({ onSuccess, onSwitchToSignIn }: SignUpProps) {
                   }}
                 />
 
-                {errors.birthday && (
-                  <p className="text-sm text-destructive">{errors.birthday.message}</p>
-                )}
+                <InlineFieldError message={errors.birthday?.message} />
               </div>
 
               <div className="space-y-2">
-                <Label className="font-secondary text-black">
-                  Gender Identity<span className="text-red-500"> *</span>
-                </Label>
+                <div className="flex items-center gap-1.5">
+                  <Label className="font-secondary text-[15px] font-medium text-[#25313D]">
+                    How do you identify?
+                  </Label>
+                  <TooltipProvider delayDuration={120}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground hover:text-[#25313D]"
+                          aria-label="Open field help"
+                        >
+                          <Info className="h-3.5 w-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-[260px] text-xs leading-5">
+                        Helps us provide a more personalized experience.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
 
                 <Controller
                   name="genderIdentity"
                   control={control}
                   render={({ field }) => (
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="flex flex-wrap gap-2">
                       {GENDER_OPTIONS.map((option) => {
                         const isSelected = field.value === option;
 
@@ -910,10 +1153,10 @@ export function SignUp({ onSuccess, onSwitchToSignIn }: SignUpProps) {
                             type="button"
                             onClick={() => field.onChange(option)}
                             className={[
-                              "rounded-xl border px-3 py-3 text-center text-sm transition-all",
+                              "rounded-full border px-5 h-11 min-w-[102px] inline-flex items-center justify-center text-center text-[15px] font-medium transition-all",
                               isSelected
-                                ? "border-accent bg-accent/10 shadow-sm"
-                                : "border-border hover:border-accent/70 bg-background",
+                                ? "bg-[#0B3D2E] text-white border-[#0B3D2E]"
+                                : "border-[#D0D5DD] hover:border-[#0B3D2E]/50 bg-transparent text-[#2B3440]",
                             ].join(" ")}
                           >
                             {label}
@@ -924,18 +1167,16 @@ export function SignUp({ onSuccess, onSwitchToSignIn }: SignUpProps) {
                   )}
                 />
 
-                {errors.genderIdentity && (
-                  <p className="text-sm text-destructive">{errors.genderIdentity.message}</p>
-                )}
+                <InlineFieldError message={errors.genderIdentity?.message} />
               </div>
             </>
           )}
 
           {/* ---------------- STEP 3 ---------------- */}
           {step === 3 && (
-            <div className="space-y-2">
-              <Label className="font-secondary text-black">
-                Top 3 Grocery Stores (2 required)<span className="text-red-500"> *</span>
+            <div className="space-y-3">
+              <Label className="font-secondary text-[15px] font-medium text-[#25313D]">
+                Select up to 3 retailers (2 required)
               </Label>
 
               <Controller
@@ -959,23 +1200,47 @@ export function SignUp({ onSuccess, onSwitchToSignIn }: SignUpProps) {
                   };
 
                   return (
-                    <div className="border rounded-2xl max-h-64 overflow-y-auto p-2">
-                      <div className="grid grid-cols-3 gap-2">
-                        {GROCERY_STORES.map((store) => {
+                    <div className="max-h-[430px] overflow-y-auto pr-1">
+                      <div className="grid grid-cols-2 gap-4">
+                        {GROCERY_STORES.map((store, index) => {
                           const isSelected = selected.includes(store);
+                          const canSelectStore = isSelected || selected.length < 3;
+                          const placeholderTheme =
+                            STORE_PLACEHOLDER_THEMES[index % STORE_PLACEHOLDER_THEMES.length];
+
                           return (
                             <button
                               key={store}
                               type="button"
                               onClick={() => toggleStore(store)}
+                              disabled={!canSelectStore}
+                              aria-label={store}
+                              aria-pressed={isSelected}
                               className={[
-                                "rounded-xl border px-3 h-12 flex items-center justify-center text-center text-xs sm:text-sm transition-all",
+                                "relative h-[122px] rounded-[32px] border transition-all",
                                 isSelected
-                                  ? "border-accent bg-accent/10 shadow-sm"
-                                  : "border-border hover:border-accent/70 bg-background",
+                                  ? "border-[#0B4A39] bg-[#E7EEEB] shadow-[inset_0_0_0_1px_rgba(11,74,57,0.15)]"
+                                  : "border-[#D8DBDF] bg-white shadow-[0_2px_8px_rgba(16,24,40,0.04)]",
+                                !canSelectStore ? "opacity-60" : "",
                               ].join(" ")}
                             >
-                              {store}
+                              {isSelected ? (
+                                <span className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#0B4A39] text-white">
+                                  <Check className="h-5 w-5" />
+                                </span>
+                              ) : null}
+
+                              <div className="flex h-full w-full items-center justify-center">
+                                <div
+                                  className={[
+                                    "inline-flex h-16 w-16 items-center justify-center rounded-sm text-[10px] font-semibold tracking-[0.02em]",
+                                    placeholderTheme.tile,
+                                    placeholderTheme.text,
+                                  ].join(" ")}
+                                >
+                                  {getStoreLogoText(store)}
+                                </div>
+                              </div>
                             </button>
                           );
                         })}
@@ -985,58 +1250,74 @@ export function SignUp({ onSuccess, onSwitchToSignIn }: SignUpProps) {
                 }}
               />
 
-              {errors.selectedGrocers && (
-                <p className="text-sm text-destructive">{errors.selectedGrocers.message}</p>
-              )}
+              <InlineFieldError message={errors.selectedGrocers?.message} />
             </div>
           )}
 
           {/* Navigation buttons */}
-          <div className="flex gap-2">
-            {step !== 1 && (
+          {step === 1 ? (
+            <div className="pt-6 space-y-3">
               <Button
                 type="button"
-                variant="outline"
-                className="w-full h-12 font-primary font-medium text-black hover:bg-prox hover:text-white transition-colors"
-                onClick={handleBack}
-                disabled={isLoading}
-              >
-                Back
-              </Button>
-            )}
-
-            {step !== 3 ? (
-              <Button
-                type="button"
-                className="w-full h-12 bg-prox hover:bg-prox-hover text-white font-secondary"
-
-                // className="w-full h-12 bg-prox hover:bg-prox-hover text-white font-secondary"
+                className="w-full h-12 min-h-[52px] rounded-full bg-[#0B3D2E] hover:bg-[#093426] text-white font-secondary text-[18px] shadow-[0_6px_14px_rgba(11,61,46,0.22)]"
                 onClick={handleNext}
-                disabled={isLoading}
+                disabled={isLoading || isCheckingEmail}
               >
-                Next
+                {isCheckingEmail ? "Checking..." : "Continue"}
               </Button>
-            ) : (
+
+              <p className="text-center text-sm text-[#667085] font-secondary pt-1">
+                By continuing, you agree to our{" "}
+                <span className="text-[#0F4B3A] underline font-semibold">Terms of Service</span>.
+              </p>
+
+              <p className="text-center text-[15px] text-[#667085] font-secondary">
+                Already have an account?{" "}
+                <button
+                  type="button"
+                  onClick={() => onSwitchToSignIn()}
+                  className="text-[#0F4B3A] font-semibold hover:underline"
+                >
+                  Log In
+                </button>
+              </p>
+            </div>
+          ) : step === 2 ? (
+            <div className="pt-12 sm:pt-16">
+              <Button
+                type="button"
+                className="w-full h-12 min-h-[52px] rounded-full bg-[#0B3D2E] hover:bg-[#093426] text-white font-secondary text-[18px] shadow-[0_6px_14px_rgba(11,61,46,0.22)]"
+                onClick={handleNext}
+                disabled={isLoading || isCheckingEmail}
+              >
+                {isCheckingEmail ? "Checking..." : "Continue"}
+              </Button>
+            </div>
+          ) : step === 3 ? (
+            <div className="space-y-5 pt-4">
+              <div
+                className="h-2 rounded-full bg-[#D9DEE2]"
+                role="progressbar"
+                aria-label="Retailer selection progress"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={retailerProgressPercent}
+              >
+                <div
+                  className="h-full rounded-full bg-[#0B4A39] transition-all duration-200 ease-out"
+                  style={{ width: `${retailerProgressPercent}%` }}
+                />
+              </div>
+
               <Button
                 type="submit"
-                className="w-full h-12 bg-prox hover:bg-prox-hover text-white font-secondary"
-                disabled={isLoading}
+                className="w-full h-12 min-h-[52px] rounded-full bg-[#0B3D2E] hover:bg-[#093426] text-white font-secondary text-[18px] shadow-[0_6px_14px_rgba(11,61,46,0.22)]"
+                disabled={isLoading || isCheckingEmail}
               >
-                {isLoading ? "Creating Account..." : "Create Account"}
+                {isLoading ? "Creating Account..." : "Continue"}
               </Button>
-            )}
-          </div>
-
-          {/* Switch to sign in */}
-          <div className="text-center">
-            <button
-              type="button"
-              onClick={onSwitchToSignIn}
-              className="text-sm text-accent hover:underline font-secondary"
-            >
-              Already have an account? Sign in
-            </button>
-          </div>
+            </div>
+          ) : null}
         </form>
       </ProxCardContent>
     </ProxCard>
